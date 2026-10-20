@@ -69,7 +69,7 @@ def on_state_subject(ctx) -> None:
         bot.send(ctx["chat_id"], "موضوع باید ۱ تا ۱۲۰ کاراکتر باشد. دوباره:",
                  kb.cancel_button())
         return
-    db.set_state(ctx["tg_id"], "ticket_body", customer["tenant_id"], subject)
+    repo.set_state(ctx["tg_id"], "ticket_body", customer["tenant_id"], subject)
     bot.send(ctx["chat_id"], "توضیح مشکل را بنویسید (می‌توانید فایل هم بفرستید):",
              kb.cancel_button())
 
@@ -84,7 +84,7 @@ def on_state_body(ctx) -> None:
         return
     if not body:
         body = "[فایل]"
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     ticket_id = ticket_manager.open_ticket(customer["tenant_id"], customer, subject, body)
     _attach_file(ticket_id, file_id, file_type)
     ticket = repo.get_ticket(ticket_id)
@@ -154,7 +154,7 @@ def _start_add(ctx) -> None:
     tenant_id = _tenant(ctx)
     if not tenant_id:
         return
-    db.set_state(ctx["tg_id"], "add_customer_id", tenant_id)
+    repo.set_state(ctx["tg_id"], "add_customer_id", tenant_id)
     bot.send(ctx["chat_id"],
              "آیدی عددی مشتری را بفرستید.\n"
              "(تلگرام: تنظیمات > پروفایل > شناسه عددی)",
@@ -171,7 +171,7 @@ def on_state_add_customer_id(ctx) -> None:
     except Exception as exc:  # network etc
         bot.send(ctx["chat_id"], f"❌ خطا: {esc(str(exc)[:200])}", kb.cancel_button())
         return
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     bot.send(ctx["chat_id"], f"✅ {status}",
              kb.markup([kb.btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU), style="primary")]))
 
@@ -180,14 +180,14 @@ def _start_search(ctx) -> None:
     tenant_id = _tenant(ctx)
     if not tenant_id:
         return
-    db.set_state(ctx["tg_id"], "search_customer", tenant_id)
+    repo.set_state(ctx["tg_id"], "search_customer", tenant_id)
     bot.send(ctx["chat_id"], "نام، آیدی عددی یا تگ مشتری را بفرستید:", kb.cancel_button())
 
 
 def on_state_search(ctx) -> None:
     tenant_id = ctx.get("tenant_id") or ctx.get("state_data")
     needle = (ctx.get("text") or "").strip()
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     if not needle:
         bot.send(ctx["chat_id"], "چیزی ننوشتید.")
         return
@@ -248,7 +248,7 @@ def _start_tag(ctx, raw_id: str) -> None:
     if not customer or customer["tenant_id"] != _tenant(ctx):
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return
-    db.set_state(ctx["tg_id"], "tag_customer", customer["tenant_id"], raw_id)
+    repo.set_state(ctx["tg_id"], "tag_customer", customer["tenant_id"], raw_id)
     bot.send(ctx["chat_id"],
              f"تگ مشتری {esc(customer['name'] or customer['tg_id'])} را بفرستید "
              "(خالی = حذف تگ):", kb.cancel_button())
@@ -257,7 +257,7 @@ def _start_tag(ctx, raw_id: str) -> None:
 def on_state_tag(ctx) -> None:
     raw_id = ctx.get("state_data")
     tenant_id = ctx.get("tenant_id") or ctx.get("state_data")
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     if not raw_id or not str(raw_id).isdigit():
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return

@@ -103,7 +103,7 @@ def _start_reply(ctx, ticket_id: int) -> None:
     if not ticket:
         bot.send(ctx["chat_id"], "تیکت پیدا نشد.")
         return
-    db.set_state(ctx["tg_id"], "agent_reply", ctx["tenant_id"], str(ticket_id))
+    repo.set_state(ctx["tg_id"], "agent_reply", ctx["tenant_id"], str(ticket_id))
     bot.send(ctx["chat_id"],
              f"پاسخ به تیکت #{ticket['number']} را بنویسید:",
              kb.cancel_button())
@@ -118,7 +118,7 @@ def _start_note(ctx, ticket_id: int) -> None:
     if not ticket:
         bot.send(ctx["chat_id"], "تیکت پیدا نشد.")
         return
-    db.set_state(ctx["tg_id"], "agent_note", ctx["tenant_id"], str(ticket_id))
+    repo.set_state(ctx["tg_id"], "agent_note", ctx["tenant_id"], str(ticket_id))
     bot.send(ctx["chat_id"],
              f"یادداشت داخلی برای تیکت #{ticket['number']} (مشتری نمی‌بیند):",
              kb.cancel_button())
@@ -133,21 +133,21 @@ def _finish_message(ctx, internal: bool) -> None:
     ticket_id = _ticket_or_none(raw_id)
     body = validators.paragraph(ctx.get("text") or ctx.get("caption") or "", 3500)
     if ticket_id is None or body is None:
-        db.clear_state(ctx["tg_id"])
+        repo.clear_state(ctx["tg_id"])
         bot.send(ctx["chat_id"], "پیام نامعتبر بود؛ لغو شد.")
         return
     ticket = _owned_ticket(ctx, ticket_id)
     if not ticket:
-        db.clear_state(ctx["tg_id"])
+        repo.clear_state(ctx["tg_id"])
         bot.send(ctx["chat_id"], "تیکت پیدا نشد.")
         return
     try:
         ticket_manager.agent_reply(ticket_id, ctx["tg_id"], body, internal=internal)
     except ticket_manager.TicketError as exc:
-        db.clear_state(ctx["tg_id"])
+        repo.clear_state(ctx["tg_id"])
         bot.send(ctx["chat_id"], f"❌ {esc(str(exc))}")
         return
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     label = "یادداشت داخلی ثبت شد." if internal else "پاسخ ارسال شد."
     _refresh(ctx, ticket_id)
     bot.send(ctx["chat_id"], f"✅ {label}")
@@ -190,7 +190,7 @@ def on_state_transfer(ctx) -> None:
     raw = (ctx.get("text") or "").strip()
     raw_id = ctx.get("state_data")
     ticket_id = _ticket_or_none(raw_id)
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     if ticket_id is None:
         bot.send(ctx["chat_id"], "تیکت پیدا نشد.")
         return

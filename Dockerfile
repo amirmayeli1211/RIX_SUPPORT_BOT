@@ -10,9 +10,10 @@ WORKDIR /app
 # No dependencies to copy or install; copy sources last for layer caching.
 COPY *.py ./
 
-# Non-root user; the volume at /data must be writable by it.
-RUN useradd -m -u 10001 rix && mkdir -p /data && chown -R rix /data /app
-USER rix
+# Railway mounts volumes root-owned, so a non-root USER here caused
+# PermissionError on /data at boot. Run as root; config.ensure_dirs() still
+# falls back safely if a path is ever unwritable.
+RUN mkdir -p /data
 
 EXPOSE 8080
 

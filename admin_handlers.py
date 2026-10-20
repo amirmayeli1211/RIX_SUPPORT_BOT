@@ -70,7 +70,7 @@ def _edit_setting(ctx, key: str) -> None:
         return
     tenant_id = ctx["tenant_id"]
     current = repo.get_setting(tenant_id, key, "")
-    db.set_state(ctx["tg_id"], "set_value", tenant_id, key)
+    repo.set_state(ctx["tg_id"], "set_value", tenant_id, key)
     text, keyboard = menus.screen_setting_edit(key, current)
     bot.send(ctx["chat_id"], text, keyboard)
 
@@ -80,7 +80,7 @@ def on_state_set_value(ctx) -> None:
     tenant_id = ctx.get("tenant_id") or ctx.get("state_data")
     validator = SETTING_VALIDATORS.get(key or "")
     if validator is None:
-        db.clear_state(ctx["tg_id"])
+        repo.clear_state(ctx["tg_id"])
         bot.send(ctx["chat_id"], "تنظیم نامعتبر بود.")
         return
     raw = (ctx.get("text") or "").strip()
@@ -91,7 +91,7 @@ def on_state_set_value(ctx) -> None:
         return
     repo.set_setting(tenant_id, key, value)
     audit.log(tenant_id, ctx["tg_id"], audit.Act.SETTING_SET, target=key)
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     bot.send(ctx["chat_id"], "✅ ذخیره شد.",
              kb.markup([kb.btn("تنظیمات", cb.enc(cb.AD, "settings"), style="primary")]))
 
@@ -106,7 +106,7 @@ def _operators(ctx) -> None:
 
 
 def _start_add_operator(ctx) -> None:
-    db.set_state(ctx["tg_id"], "add_operator_id", ctx["tenant_id"])
+    repo.set_state(ctx["tg_id"], "add_operator_id", ctx["tenant_id"])
     bot.send(ctx["chat_id"],
              "آیدی عددی اپراتور جدید را بفرستید (اول باید ربات را استارت کرده باشد):",
              kb.cancel_button())
@@ -131,7 +131,7 @@ def on_state_add_operator(ctx) -> None:
     repo.add_member(tenant_id, tg_id, Role.AGENT,
                     capacity=config.DEFAULT_AGENT_CAPACITY)
     audit.log(tenant_id, ctx["tg_id"], audit.Act.MEMBER_ADD, target=tg_id, detail="agent")
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     try:
         bot.send(tg_id, "شما به عنوان اپراتور اضافه شدید. /start بزنید.")
     except bot.TgError:
@@ -224,7 +224,7 @@ def _ask_capacity(ctx, tg_id: int) -> None:
     if not member:
         bot.send(ctx["chat_id"], "اپراتور پیدا نشد.")
         return
-    db.set_state(ctx["tg_id"], "op_capacity", ctx["tenant_id"], str(tg_id))
+    repo.set_state(ctx["tg_id"], "op_capacity", ctx["tenant_id"], str(tg_id))
     bot.send(ctx["chat_id"],
              f"سقف تیکت‌های همزمان برای {esc(member['name'] or str(tg_id))} "
              f"(الان {member['capacity']}) را بفرستید (۱ تا ۱۰۰):",
@@ -235,7 +235,7 @@ def on_state_capacity(ctx) -> None:
     raw_id = ctx.get("state_data")
     tenant_id = ctx.get("tenant_id") or ctx.get("state_data")
     value = validators.capacity(ctx.get("text", ""))
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     if not raw_id or not str(raw_id).isdigit() or value is None:
         bot.send(ctx["chat_id"], "مقدار نامعتبر بود.")
         return

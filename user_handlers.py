@@ -88,7 +88,7 @@ def on_nav(ctx) -> None:
     elif screen == "new_ticket":
         _new_ticket(ctx)
     elif screen == "cancel":
-        db.clear_state(ctx["tg_id"])
+        repo.clear_state(ctx["tg_id"])
         bot.send(ctx["chat_id"], "لغو شد.")
         _send_menu(ctx)
     elif screen == "help":
@@ -169,7 +169,7 @@ def _new_ticket(ctx) -> None:
         return
     import sla_manager
     tenant_id = ctx["customer_tenant_id"]
-    db_clear = db.set_state(ctx["tg_id"], "ticket_subject", tenant_id)
+    db_clear = repo.set_state(ctx["tg_id"], "ticket_subject", tenant_id)
     if not sla_manager.is_open_now(tenant_id):
         text, keyboard = menus.screen_outside_hours(tenant_id, ctx.get("has_open_ticket", False), ctx)
         bot.send(ctx["chat_id"], text, keyboard)

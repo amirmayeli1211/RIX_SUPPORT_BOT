@@ -154,7 +154,7 @@ def _route_msg(ctx) -> None:
     import user_handlers
 
     text = ctx.get("text", "")
-    state_row = db.get_state(ctx["tg_id"])
+    state_row = repo.get_state(ctx["tg_id"])
     state = state_row["state"] if state_row else None
 
     if state:
@@ -201,7 +201,7 @@ def _route_state(ctx, state: str) -> bool:
     }
     handler = table.get(state)
     if handler is None:
-        db.clear_state(ctx["tg_id"])
+        repo.clear_state(ctx["tg_id"])
         return False
     handler(ctx)
     return True

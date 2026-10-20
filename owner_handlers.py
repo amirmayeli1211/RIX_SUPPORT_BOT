@@ -62,7 +62,7 @@ def _list(ctx) -> None:
 
 
 def _start_new(ctx) -> None:
-    db.set_state(ctx["tg_id"], "new_tenant", None)
+    repo.set_state(ctx["tg_id"], "new_tenant", None)
     bot.send(ctx["chat_id"],
              "نام کسب‌وکار را بفرستید (مثلا «فروشگاه الف»):",
              kb.cancel_button())
@@ -70,7 +70,7 @@ def _start_new(ctx) -> None:
 
 def on_state_new_tenant(ctx) -> None:
     name = validators.one_line(ctx.get("text", ""), 80)
-    db.clear_state(ctx["tg_id"])
+    repo.clear_state(ctx["tg_id"])
     if name is None:
         bot.send(ctx["chat_id"], "نام نامعتبر است (۱ تا ۸۰ کاراکتر).")
         return

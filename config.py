@@ -9,6 +9,7 @@ live there so they survive redeploys.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -51,8 +52,37 @@ def api_url(method: str) -> str:
 
 
 def ensure_dirs() -> None:
+    """Create storage dirs; fall back to a writable dir instead of crash-looping.
+
+    Railway volumes can be mounted root-owned; if the configured path is not
+    writable we switch to a temp dir and say so loudly - a silent crash loop
+    (PermissionError at boot) is strictly worse than degraded persistence."""
+    global DATA_DIR, DB_PATH, BACKUP_DIR
     for path in (DB_PATH.parent, BACKUP_DIR):
-        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            probe = path / ".rix-write-probe"
+            probe.write_text("ok")
+            probe.unlink()
+        except OSError as exc:
+            fallback = Path(tempfile.gettempdir()) / "rix-data"
+            print(f"[config] WARNING: {path} not writable ({exc}); "
+                  f"falling back to {fallback} - data will NOT survive redeploys",
+                  flush=True)
+            DATA_DIR = fallback
+            DB_PATH = fallback / DB_PATH.name
+            BACKUP_DIR = fallback / "backups"
+            try:
+                for p2 in (DB_PATH.parent, BACKUP_DIR):
+                    p2.mkdir(parents=True, exist_ok=True)
+            except OSError as exc2:
+                # Even the fallback is unusable: fail with a clear message
+                # instead of an opaque PermissionError deep in sqlite.
+                raise SystemExit(
+                    f"[config] FATAL: no writable storage. {path} -> {exc}; "
+                    f"{fallback} -> {exc2}. Set DATA_DIR to a writable path."
+                ) from exc2
+            return
 
 
 def validate() -> list[str]:
