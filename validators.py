@@ -106,6 +106,28 @@ def url(value) -> str | None:
     return s
 
 
+_CARD = re.compile(r"^[0-9]{16}$")
+
+
+def card_number(value) -> str | None:
+    """16-digit card number; spaces and dashes are tolerated."""
+    s = re.sub(r"[\s-]", "", str(value or ""))
+    if not _CARD.match(s):
+        return None
+    return s
+
+
+def price_toman(value) -> int | None:
+    """Price in Toman: positive, at most 1,000,000,000; 0 disables selling."""
+    s = re.sub(r"[,\s_]", "", str(value or ""))
+    if not s.isdigit():
+        return None
+    n = int(s)
+    if n < 0 or n > 1_000_000_000:
+        return None
+    return n
+
+
 def tag(value) -> str | None:
     s = str(value or "").strip()
     return s if _TAG.match(s) else None

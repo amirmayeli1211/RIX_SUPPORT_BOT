@@ -10,6 +10,88 @@ from __future__ import annotations
 import database as db
 from models import Role, Status
 
+# --------------------------------------------------- platform settings (0)
+# tenant_id=0 is the platform row-space: card number, plan prices, and any
+# other setting the owner edits that belongs to no single tenant.
+
+PLATFORM = 0
+
+
+def plat_get(key: str, default: str = "") -> str:
+    return get_setting(PLATFORM, key, default)
+
+
+def plat_set(key: str, value: str) -> None:
+    set_setting(PLATFORM, key, value)
+
+
+def card_number() -> str:
+    return plat_get("card_number", "").strip()
+
+
+def card_holder() -> str:
+    return plat_get("card_holder", "").strip()
+
+
+# ------------------------------------------------------------------ orders
+
+def create_order(tg_id: int, plan_id: int, amount: int) -> int:
+    return db.ex(
+        "INSERT INTO orders(tg_id, plan_id, amount, status, created_at)"
+        " VALUES (?,?,?,'awaiting_receipt',?)", (tg_id, plan_id, amount, db.now()))
+
+
+def get_order(order_id: int):
+    return db.one(
+        "SELECT o.*, p.name AS plan_name, p.max_shops FROM orders o"
+        " LEFT JOIN plans p ON p.id=o.plan_id WHERE o.id=?", (order_id,))
+
+
+def attach_receipt(order_id: int, file_id: str, file_type: str) -> None:
+    db.ex("UPDATE orders SET receipt_file_id=?, receipt_type=?, status='pending'"
+          " WHERE id=?", (file_id, file_type, order_id))
+
+
+def set_order_status(order_id: int, status: str, reviewed_by=None) -> None:
+    db.ex("UPDATE orders SET status=?, reviewed_at=?, reviewed_by=? WHERE id=?",
+          (status, db.now(), reviewed_by, order_id))
+
+
+def pending_orders(limit: int = 20):
+    return db.q(
+        "SELECT o.*, p.name AS plan_name FROM orders o"
+        " LEFT JOIN plans p ON p.id=o.plan_id"
+        " WHERE o.status='pending' ORDER BY o.id LIMIT ?", (limit,))
+
+
+def latest_order(tg_id: int):
+    return db.one("SELECT * FROM orders WHERE tg_id=? ORDER BY id DESC LIMIT 1",
+                  (tg_id,))
+
+
+def orders_of(tg_id: int, limit: int = 10):
+    return db.q(
+        "SELECT o.*, p.name AS plan_name FROM orders o"
+        " LEFT JOIN plans p ON p.id=o.plan_id"
+        " WHERE o.tg_id=? ORDER BY o.id DESC LIMIT ?", (tg_id, limit))
+
+
+def buyable_plans():
+    """Active plans that have a price set - only these can be sold."""
+    return db.q("SELECT * FROM plans WHERE active=1 AND price > 0"
+                " ORDER BY price, id")
+
+
+def set_plan_price(plan_id: int, price: int) -> None:
+    db.ex("UPDATE plans SET price=? WHERE id=?", (int(price), plan_id))
+
+
+def toggle_plan(plan_id: int) -> int:
+    db.ex("UPDATE plans SET active = CASE active WHEN 1 THEN 0 ELSE 1 END"
+          " WHERE id=?", (plan_id,))
+    return int(db.scalar("SELECT active FROM plans WHERE id=?", (plan_id,), 0))
+
+
 # ------------------------------------------------------------------ plans
 
 def list_plans(active_only: bool = True):

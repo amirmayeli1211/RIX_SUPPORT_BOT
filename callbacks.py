@@ -17,6 +17,7 @@ OW = "ow"        # owner:      ow:<op>:<arg>
 RATE = "rate"    # rating:     rate:<ticket_id>:<1-5>
 OP = "op"        # operator:   op:<op>:<tg_id>
 ACC = "acc"      # customer panel (account): acc:<op>[:arg]  – plan/shop mgmt
+BUY = "buy"      # self-service purchase: buy:<op>[:arg]
 
 # Common operations
 MENU = "menu"

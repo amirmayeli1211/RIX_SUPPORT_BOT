@@ -66,11 +66,17 @@ def main_menu(*, is_customer: bool, is_staff: bool, is_admin: bool,
         rows.append([btn("مشتریان", cb.enc(cb.AD, "customers")),
                      btn("لینک دعوت مشتریان", cb.enc(cb.AD, "invite"), style="primary")])
     if is_owner or is_super_owner:
-        rows.append([btn("مشتریان من", cb.enc(cb.OW, "accounts"), style="success"),
-                     btn("فروش پلن", cb.enc(cb.OW, "sell"), style="primary")])
+        rows.append([btn("خریدهای در انتظار", cb.enc(cb.OW, "orders"), style="success"),
+                     btn("پلن‌ها و قیمت‌ها", cb.enc(cb.OW, "plans"), style="primary")])
+        rows.append([btn("تنظیمات پرداخت", cb.enc(cb.OW, "payset")),
+                     btn("مشتریان من", cb.enc(cb.OW, "accounts"))])
+        rows.append([btn("فروش پلن (دستی)", cb.enc(cb.OW, "sell"))])
         rows.append([btn("کسب‌وکارها", cb.enc(cb.OW, "list")),
                      btn("گزارش سراسری", cb.enc(cb.OW, "report"))])
         rows.append([btn("لاگ اقدامات", cb.enc(cb.AD, "audit"))])
+    if not (is_customer or is_staff or is_owner or is_super_owner):
+        # Strangers are the buyers: put the shop right in front of them.
+        rows.append([btn("خرید پلن", cb.enc(cb.BUY, "start"), style="success")])
     rows.append([btn("راهنما", cb.enc(cb.NAV, "help"))])
     return markup(*rows)
 
@@ -257,6 +263,61 @@ def tenant_detail(tenant) -> dict | None:
     return markup(
         [status_btn],
         [btn("بازگشت", cb.enc(cb.OW, "list"))],
+    )
+
+
+# ------------------------------------------------------------ buy a plan
+
+def buy_menu(plans) -> dict | None:
+    """Prices on the buttons - the user never has to ask what it costs."""
+    rows = []
+    for pl in plans:
+        rows.append([btn(f"{pl['name']} — {int(pl['price']):,} تومان"
+                         f" · {pl['max_shops']} فروشگاه",
+                         cb.enc(cb.BUY, "plan", pl["id"]), style="primary")])
+    rows.append([btn("خریدهای من", cb.enc(cb.BUY, "mine"))])
+    rows.append([btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU))])
+    return markup(*rows)
+
+
+def payment_screen(order, card: str, holder: str) -> dict | None:
+    rows = []
+    if card:
+        rows.append([btn("کپی شماره کارت", copy_text=card, style="success")])
+    rows.append([btn("ارسال رسید", cb.enc(cb.BUY, "receipt", order["id"]),
+                     style="primary")])
+    rows.append([btn("انصراف از خرید", cb.enc(cb.BUY, "cancel", order["id"]),
+                     style="danger")])
+    return markup(*rows)
+
+
+def order_review(order, tg_id: int) -> dict | None:
+    return markup(
+        [btn("تأیید و فعال‌سازی", cb.enc(cb.OW, "ok", order["id"]), style="success"),
+         btn("رد کردن", cb.enc(cb.OW, "no", order["id"]), style="danger")],
+        [btn("پیام به خریدار", url=f"tg://user?id={tg_id}")],
+    )
+
+
+def plan_admin_list(plans) -> dict | None:
+    """Owner-side price/active editor for every plan."""
+    rows = []
+    for pl in plans:
+        price = int(pl["price"] or 0)
+        price_txt = f"{price:,} ت" if price else "قیمت ندارد"
+        flag = "" if pl["active"] else " (خاموش)"
+        rows.append([btn(f"{pl['name']} · {price_txt}{flag}",
+                         cb.enc(cb.OW, "planedit", pl["id"]), style="primary")])
+    rows.append([btn("بازگشت", cb.enc(cb.NAV, cb.MENU))])
+    return markup(*rows)
+
+
+def plan_admin_edit(plan) -> dict | None:
+    return markup(
+        [btn("تغییر قیمت", cb.enc(cb.OW, "planprice", plan["id"]), style="primary")],
+        [btn("خاموش کردن" if plan["active"] else "روشن کردن",
+             cb.enc(cb.OW, "plantoggle", plan["id"]))],
+        [btn("بازگشت", cb.enc(cb.OW, "plans"))],
     )
 
 

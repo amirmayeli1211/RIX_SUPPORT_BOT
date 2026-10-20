@@ -48,10 +48,17 @@ def on_start(ctx) -> None:
     # Unregistered visitor: welcome text plus the same menu everyone else
     # gets (currently just راهنا, but never a dead single button).
     text, keyboard = menus.screen_menu(ctx)
-    bot.send(ctx["chat_id"],
-             "سلام! 👋\nاین ربات پشتیبانی است.\nاگر مشتری هستید، ادمین شما را اضافه می‌کند "
-             "و کد تأیید برایتان می‌آید.\n\n" + text,
-             keyboard)
+    plans = repo.buyable_plans()
+    pitch = "سلام! 👋\n"
+    if plans:
+        cheapest = plans[0]
+        pitch += ("اینجا می‌توانید پلتفرم پشتیبانی خودتان را بخرید و "
+                  "فروشگاه بسازید.\n"
+                  f"شروع از {int(cheapest['price']):,} تومان.\n\n")
+    else:
+        pitch += "این ربات پشتیبانی است.\n"
+    pitch += ("اگر مشتری یک کسب‌وکار هستید، لینک دعوت آن‌ها را باز کنید.\n\n")
+    bot.send(ctx["chat_id"], pitch + text, keyboard)
 
 
 def on_menu(ctx) -> None:

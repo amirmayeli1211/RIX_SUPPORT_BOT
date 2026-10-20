@@ -61,7 +61,9 @@ def _largest_photo(msg: dict) -> str | None:
     photos = msg.get("photo") or []
     if not photos:
         return None
-    return max(photos, key=lambda p: p.get("file_size") or 0).get("file_id")
+    if any(p.get("file_size") for p in photos):
+        return max(photos, key=lambda p: p.get("file_size") or 0).get("file_id")
+    return photos[-1].get("file_id")  # Telegram orders smallest -> largest
 
 
 def enrich(ctx: dict) -> dict:
@@ -149,6 +151,9 @@ def _route_cb(ctx) -> None:
     elif prefix == cb.ACC:
         import account_handlers
         account_handlers.on_account_cb(ctx)
+    elif prefix == cb.BUY:
+        import buy_handlers
+        buy_handlers.on_buy_cb(ctx)
     else:
         user_handlers.on_nav(ctx)  # unknown -> back to menu
 
@@ -228,6 +233,7 @@ def _route_group(ctx) -> None:
 def _route_state(ctx, state: str) -> bool:
     import account_handlers
     import admin_handlers
+    import buy_handlers
     import customer_handlers
     import owner_handlers
     import ticket_handlers
@@ -237,6 +243,10 @@ def _route_state(ctx, state: str) -> bool:
         St.SEARCH_CUSTOMER: customer_handlers.on_state_search,
         "new_shop": account_handlers.on_state_new_shop,
         "sell_account": owner_handlers.on_state_sell_account,
+        "buy_receipt": buy_handlers.on_state_buy_receipt,
+        "plan_price": owner_handlers.on_state_plan_price,
+        "card_number": owner_handlers.on_state_card_number,
+        "card_holder": owner_handlers.on_state_card_holder,
         St.ADD_OPERATOR_ID: admin_handlers.on_state_add_operator,
         St.OP_CAPACITY: admin_handlers.on_state_capacity,
         St.SET_VALUE: admin_handlers.on_state_set_value,

@@ -44,6 +44,28 @@ def on_owner_cb(ctx) -> None:
         _sell_ask_id(ctx, int(args[1]))
     elif op == "accounts":
         _accounts(ctx)
+    elif op == "orders":
+        _orders(ctx)
+    elif op == "plans":
+        _plans(ctx)
+    elif op == "planedit" and len(args) > 1 and args[1].isdigit():
+        _plan_edit(ctx, int(args[1]))
+    elif op == "planprice" and len(args) > 1 and args[1].isdigit():
+        _plan_price_ask(ctx, int(args[1]))
+    elif op == "plantoggle" and len(args) > 1 and args[1].isdigit():
+        _plan_toggle(ctx, int(args[1]))
+    elif op == "ok" and len(args) > 1 and args[1].isdigit():
+        import buy_handlers
+        buy_handlers.approve_order(ctx, int(args[1]), ctx["tg_id"])
+    elif op == "no" and len(args) > 1 and args[1].isdigit():
+        import buy_handlers
+        buy_handlers.reject_order(ctx, int(args[1]), ctx["tg_id"])
+    elif op == "card":
+        _card_start(ctx)
+    elif op == "holder":
+        _holder_start(ctx)
+    elif op == "payset":
+        _pay_settings(ctx)
     elif op == "new":
         _start_new(ctx)
     elif op == "view" and tid:
@@ -131,6 +153,167 @@ def _accounts(ctx) -> None:
     bot.send(ctx["chat_id"], "\n".join(lines),
              kb.markup([kb.btn("فروش پلن جدید", cb.enc(cb.OW, "sell"), style="success"),
                         kb.btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU))]))
+
+
+def _orders(ctx) -> None:
+    """Purchases waiting for approval."""
+    rows = repo.pending_orders()
+    if not rows:
+        bot.send(ctx["chat_id"], "خرید در انتظار تأییدی نیست.",
+                 kb.markup([kb.btn("پلن‌ها و قیمت‌ها", cb.enc(cb.OW, "plans")),
+                            kb.btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU))]))
+        return
+    for o in rows[:10]:
+        _send_order(ctx, o)
+
+
+def _send_order(ctx, o) -> None:
+    text = (
+        f"<b>خرید #{o['id']}</b> در انتظار تأیید\n\n"
+        f"پلن: {esc(o.get('plan_name') or '-')}\n"
+        f"مبلغ: {int(o['amount']):,} تومان\n"
+        f"خریدار: <code>{o['tg_id']}</code>"
+    )
+    keyboard = kb.order_review(o, o["tg_id"])
+    file_id = o.get("receipt_file_id")
+    if file_id:
+        method = ("sendDocument" if o.get("receipt_type") == "document"
+                  else "sendPhoto")
+        key = "document" if method == "sendDocument" else "photo"
+        try:
+            bot.api(method, chat_id=ctx["chat_id"], **{key: file_id},
+                    caption=text, reply_markup=keyboard)
+            return
+        except bot.TgError:
+            pass
+    bot.send(ctx["chat_id"], text, keyboard)
+
+
+def _plans(ctx) -> None:
+    plans = repo.list_plans(active_only=False)
+    hints = []
+    if not repo.card_number():
+        hints.append("⚠️ شماره کارت تنظیم نشده — بدون آن خرید کار نمی‌کند.")
+    if not any(int(p["price"] or 0) > 0 for p in plans):
+        hints.append("⚠️ هیچ پلنی قیمت ندارد — خریدار چیزی برای انتخاب نمی‌بیند.")
+    text = "<b>پلن‌ها و قیمت‌ها</b>\n\n"
+    if hints:
+        text += "\n".join(hints) + "\n\n"
+    text += "روی هر پلن بزنید تا قیمت/وضعیتش را عوض کنید."
+    bot.send(ctx["chat_id"], text, kb.plan_admin_list(plans))
+
+
+def _plan_edit(ctx, plan_id: int) -> None:
+    plan = repo.get_plan(plan_id)
+    if not plan:
+        bot.send(ctx["chat_id"], "پلن پیدا نشد.")
+        return
+    price = int(plan["price"] or 0)
+    text = (
+        f"<b>{esc(plan['name'])}</b>\n"
+        f"سقف فروشگاه: {plan['max_shops']}\n"
+        f"قیمت: {f'{price:,} تومان' if price else 'تعیین نشده'}\n"
+        f"وضعیت: {'روشن' if plan['active'] else 'خاموش'}"
+    )
+    bot.send(ctx["chat_id"], text, kb.plan_admin_edit(plan))
+
+
+def _plan_price_ask(ctx, plan_id: int) -> None:
+    plan = repo.get_plan(plan_id)
+    if not plan:
+        bot.send(ctx["chat_id"], "پلن پیدا نشد.")
+        return
+    repo.set_state(ctx["tg_id"], "plan_price", None, str(plan_id))
+    bot.send(ctx["chat_id"],
+             f"قیمت جدید برای «{esc(plan['name'])}» را به تومان بفرستید:\n"
+             "(۰ = غیرفعال کردن فروش این پلن)",
+             kb.cancel_button())
+
+
+def on_state_plan_price(ctx) -> None:
+    plan_id = ctx.get("state_data")
+    price = validators.price_toman(ctx.get("text", ""))
+    if price is None or not plan_id or not str(plan_id).isdigit():
+        bot.send(ctx["chat_id"], "عدد نامعتبر است. دوباره بفرستید یا لغو کنید:",
+                 kb.cancel_button())
+        return
+    repo.set_plan_price(int(plan_id), price)
+    audit.log(None, ctx["tg_id"], "plan.price", target=str(plan_id),
+              detail=str(price))
+    repo.clear_state(ctx["tg_id"])
+    bot.send(ctx["chat_id"], "✅ قیمت ذخیره شد.",
+             kb.markup([kb.btn("پلن‌ها", cb.enc(cb.OW, "plans"), style="primary")]))
+
+
+def _plan_toggle(ctx, plan_id: int) -> None:
+    active = repo.toggle_plan(plan_id)
+    audit.log(None, ctx["tg_id"], "plan.toggle", target=str(plan_id),
+              detail=str(active))
+    bot.send(ctx["chat_id"], "✅ پلن روشن شد." if active else "پلن خاموش شد.",
+             kb.markup([kb.btn("پلن‌ها", cb.enc(cb.OW, "plans"), style="primary")]))
+
+
+def _pay_settings(ctx) -> None:
+    """Card number + holder: the two things a bank transfer needs."""
+    card = repo.card_number()
+    holder = repo.card_holder()
+    lines = [
+        "<b>تنظیمات پرداخت</b>",
+        "",
+        f"شماره کارت: <code>{esc(card or '-')}</code>",
+        f"به نام: {esc(holder or '-')}",
+        "",
+        "این اطلاعات به خریدار نشان داده می‌شود.",
+    ]
+    keyboard = kb.markup(
+        [kb.btn("تغییر شماره کارت", cb.enc(cb.OW, "card"), style="primary"),
+         kb.btn("تغییر نام صاحب کارت", cb.enc(cb.OW, "holder"))],
+        [kb.btn("پلن‌ها و قیمت‌ها", cb.enc(cb.OW, "plans"))],
+        [kb.btn("بازگشت", cb.enc(cb.NAV, cb.MENU))],
+    )
+    bot.send(ctx["chat_id"], "\n".join(lines), keyboard)
+
+
+def _card_start(ctx) -> None:
+    repo.set_state(ctx["tg_id"], "card_number", None)
+    bot.send(ctx["chat_id"],
+             "شماره کارت ۱۶ رقمی را بفرستید:\n(فقط عدد — بدون فاصله)",
+             kb.cancel_button())
+
+
+def on_state_card_number(ctx) -> None:
+    card = validators.card_number(ctx.get("text", ""))
+    if card is None:
+        bot.send(ctx["chat_id"], "شماره کارت باید ۱۶ رقم باشد. دوباره بفرستید:",
+                 kb.cancel_button())
+        return
+    repo.plat_set("card_number", card)
+    audit.log(None, ctx["tg_id"], "platform.card", target="card_number")
+    repo.clear_state(ctx["tg_id"])
+    bot.send(ctx["chat_id"],
+             f"✅ شماره کارت ذخیره شد:\n<code>{esc(card)}</code>",
+             kb.markup([kb.btn("تنظیمات پرداخت", cb.enc(cb.OW, "payset"),
+                               style="primary")]))
+
+
+def _holder_start(ctx) -> None:
+    repo.set_state(ctx["tg_id"], "card_holder", None)
+    bot.send(ctx["chat_id"],
+             "نام و نام خانوادگی صاحب کارت را بفرستید:",
+             kb.cancel_button())
+
+
+def on_state_card_holder(ctx) -> None:
+    holder = validators.one_line(ctx.get("text", ""), 60)
+    if not holder:
+        bot.send(ctx["chat_id"], "نام نامعتبر است. دوباره بفرستید:",
+                 kb.cancel_button())
+        return
+    repo.plat_set("card_holder", holder)
+    repo.clear_state(ctx["tg_id"])
+    bot.send(ctx["chat_id"], f"✅ نام صاحب کارت ذخیره شد: {esc(holder)}",
+             kb.markup([kb.btn("تنظیمات پرداخت", cb.enc(cb.OW, "payset"),
+                               style="primary")]))
 
 
 def _start_new(ctx) -> None:

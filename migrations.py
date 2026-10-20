@@ -155,6 +155,29 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         " ('حرفه‌ای', 3, 0, strftime('%s','now')),"
         " ('سازمانی', 10, 0, strftime('%s','now'))",
     ]),
+    (7, [
+        # Self-service purchase: a stranger buys a plan from the bot, pays to
+        # the owner's card, sends the receipt, the owner approves, an account
+        # is created. Platform settings (card number etc.) live in `settings`
+        # with tenant_id=0 - no tenant owns them.
+        """CREATE TABLE IF NOT EXISTS orders (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            tg_id            INTEGER NOT NULL,
+            plan_id          INTEGER NOT NULL,
+            amount           INTEGER NOT NULL DEFAULT 0,
+            status           TEXT    NOT NULL DEFAULT 'awaiting_receipt',
+            receipt_file_id  TEXT,
+            receipt_type     TEXT,
+            note             TEXT,
+            account_id       INTEGER,
+            created_at       INTEGER NOT NULL,
+            reviewed_at      INTEGER,
+            reviewed_by      INTEGER
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_orders_tg ON orders(tg_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status, id)",
+        "ALTER TABLE plans ADD COLUMN description TEXT",
+    ]),
 ]
 
 
