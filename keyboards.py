@@ -57,6 +57,9 @@ def main_menu(*, is_customer: bool, is_staff: bool, is_admin: bool,
     if is_owner:
         rows.append([btn("کسب‌وکارها", cb.enc(cb.OW, "list")),
                      btn("لاگ اقدامات", cb.enc(cb.AD, "audit"))])
+    if not rows:
+        # A user with no role yet must still get something tappable.
+        rows.append([btn("راهنما", cb.enc(cb.NAV, "help"), style="primary")])
     return markup(*rows)
 
 

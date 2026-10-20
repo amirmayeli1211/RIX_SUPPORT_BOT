@@ -28,6 +28,18 @@ def on_start(ctx) -> None:
     if ctx.get("is_customer"):
         _send_menu(ctx)
         return
+    if ctx.get("is_super_owner"):
+        if repo.count_tenants() == 0:
+            # Bootstrap: no business exists yet, so walk the owner straight
+            # into creating the first one instead of an empty menu.
+            repo.set_state(ctx["tg_id"], "new_tenant", None)
+            bot.send(ctx["chat_id"],
+                     "سلام مالک! 👑\nهنوز کسب‌وکاری ثبت نشده.\n"
+                     "نام کسب‌وکار (مثلا «فروشگاه الف») را بفرستید تا ساخته شود:",
+                     kb.cancel_button())
+            return
+        _send_menu(ctx)
+        return
     tenant_name = ctx.get("tenant_name") or ""
     bot.send(ctx["chat_id"],
              "سلام! 👋\nاین ربات پشتیبانی است.\nاگر مشتری هستید، ادمین شما را اضافه می‌کند "

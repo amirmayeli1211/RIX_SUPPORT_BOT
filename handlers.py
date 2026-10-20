@@ -85,7 +85,11 @@ def enrich(ctx: dict) -> dict:
             "has_open_ticket": repo.open_ticket_for(customer["id"]) is not None,
         })
     if not member and not customer and config_owner_is(tg):
+        # Super-owner (OWNER_TG_ID) with no membership yet: give them the
+        # owner menu anyway, otherwise they can never create the first tenant
+        # (the panel that creates tenants is itself behind the owner menu).
         ctx["is_super_owner"] = True
+        ctx["is_owner"] = True
     return ctx
 
 
