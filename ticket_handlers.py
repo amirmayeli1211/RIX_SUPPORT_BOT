@@ -52,8 +52,9 @@ def on_ticket_cb(ctx) -> None:
         _customer_view(ctx)
         return
     args = ctx.get("args") or []
-    op = args[0] if args else ""
-    ticket_id = _ticket_or_none(args[1]) if len(args) > 1 else None
+    # Encoding is "<id>:<op>[:<arg>]" (see keyboards.ticket_detail).
+    ticket_id = _ticket_or_none(args[0]) if args else None
+    op = args[1] if len(args) > 1 else ""
     if op == "view" and ticket_id:
         _refresh(ctx, ticket_id)
     elif op == "reply" and ticket_id:
@@ -77,6 +78,10 @@ def on_ticket_cb(ctx) -> None:
         _do_reopen(ctx, ticket_id)
     elif op == "refresh" and ticket_id:
         _refresh(ctx, ticket_id)
+    elif op == "seen" and ticket_id:
+        _mark_seen(ctx, ticket_id)
+    elif op == "delete" and ticket_id:
+        _delete_ticket(ctx, ticket_id)
     else:
         bot.answer_cb(ctx["cb_id"], "نامعتبر")
 
@@ -84,7 +89,7 @@ def on_ticket_cb(ctx) -> None:
 def _customer_view(ctx) -> None:
     """A non-staff tapping a ticket button: only their own ticket."""
     args = ctx.get("args") or []
-    ticket_id = _ticket_or_none(args[1]) if len(args) > 1 else None
+    ticket_id = _ticket_or_none(args[0]) if args else None
     if not ticket_id:
         return
     ticket = repo.get_ticket(ticket_id)
@@ -94,6 +99,38 @@ def _customer_view(ctx) -> None:
         return
     text, keyboard = menus.screen_ticket_detail(ticket, is_staff=False)
     bot.edit(ctx["chat_id"], ctx["message_id"], text, keyboard)
+
+
+def _mark_seen(ctx, ticket_id: int) -> None:
+    """'دیدم': claim the ticket and tell the customer they were heard."""
+    ticket = _owned_ticket(ctx, ticket_id)
+    if not ticket:
+        bot.answer_cb(ctx["cb_id"], "تیکت پیدا نشد", alert=True)
+        return
+    if not ticket["assigned_to"]:
+        operator_manager.assign(ticket_id, ctx["tg_id"], ctx["tg_id"])
+    repo.add_message(ticket_id, "system", ctx["tg_id"], "پیام شما دیده شد.")
+    bot.answer_cb(ctx["cb_id"], "دیده شد ✅")
+    try:
+        bot.send(ticket["customer_tg_id"],
+                 f"پیام شما در تیکت #{ticket['number']} دیده شد. به‌زودی پاسخ می‌دهیم.")
+    except bot.TgError:
+        pass
+    _refresh(ctx, ticket_id)
+
+
+def _delete_ticket(ctx, ticket_id: int) -> None:
+    ticket = _owned_ticket(ctx, ticket_id)
+    if not ticket:
+        bot.answer_cb(ctx["cb_id"], "تیکت پیدا نشد", alert=True)
+        return
+    if not ctx.get("is_admin"):
+        bot.answer_cb(ctx["cb_id"], "فقط ادمین می‌تواند حذف کند", alert=True)
+        return
+    repo.delete_ticket(ticket_id)
+    audit.log(ticket["tenant_id"], ctx["tg_id"], "ticket.delete", target=ticket_id)
+    bot.send(ctx["chat_id"], f"تیکت #{ticket['number']} حذف شد.",
+             kb.markup([kb.btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU), style="primary")]))
 
 
 # ---------------------------------------------------------------- reply/note

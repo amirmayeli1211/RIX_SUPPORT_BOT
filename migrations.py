@@ -113,6 +113,12 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_audit_tenant ON audit(tenant_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_verify_live ON verify_codes(tg_id, purpose, consumed_at)",
     ]),
+    (4, [
+        # Per-tenant invite link: users who open it become customers of that
+        # tenant only. `blocked` lets staff cut a customer off from tickets.
+        "ALTER TABLE tenants ADD COLUMN invite_code TEXT",
+        "ALTER TABLE customers ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0",
+    ]),
 ]
 
 

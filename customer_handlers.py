@@ -33,6 +33,9 @@ def _deny(ctx, text: str = "دسترسی نداری.") -> None:
 def on_customer_text(ctx) -> None:
     """Free text from a verified customer -> their open ticket."""
     customer = ctx["customer"]
+    if customer.get("blocked"):
+        bot.send(ctx["chat_id"], "دسترسی شما نزد این کسب‌وکار مسدود است.")
+        return
     body = ctx.get("text") or ctx.get("caption") or ""
     file_id, file_type = _media(ctx)
     if not body and not file_id:
@@ -40,7 +43,11 @@ def on_customer_text(ctx) -> None:
         return
     if not body:
         body = "[فایل]"
-    ticket_id = ticket_manager.customer_message(customer, body, file_id, file_type)
+    try:
+        ticket_id = ticket_manager.customer_message(customer, body, file_id, file_type)
+    except ticket_manager.TicketError as exc:
+        bot.send(ctx["chat_id"], str(exc))
+        return
     ticket = repo.get_ticket(ticket_id)
     outside = "" if sla_manager.is_open_now(customer["tenant_id"]) else \
         "\n\n" + sla_manager.outside_hours_notice(customer["tenant_id"])
@@ -64,6 +71,10 @@ def _media(ctx):
 
 def on_state_subject(ctx) -> None:
     customer = ctx["customer"]
+    if customer.get("blocked"):
+        repo.clear_state(ctx["tg_id"])
+        bot.send(ctx["chat_id"], "دسترسی شما نزد این کسب‌وکار مسدود است.")
+        return
     subject = validators.one_line(ctx.get("text"), 120)
     if subject is None:
         bot.send(ctx["chat_id"], "موضوع باید ۱ تا ۱۲۰ کاراکتر باشد. دوباره:",
@@ -76,6 +87,10 @@ def on_state_subject(ctx) -> None:
 
 def on_state_body(ctx) -> None:
     customer = ctx["customer"]
+    if customer.get("blocked"):
+        repo.clear_state(ctx["tg_id"])
+        bot.send(ctx["chat_id"], "دسترسی شما نزد این کسب‌وکار مسدود است.")
+        return
     subject = ctx.get("state_data") or "تیکت"
     body = ctx.get("text") or ctx.get("caption") or ""
     file_id, file_type = _media(ctx)
@@ -127,27 +142,85 @@ def on_rate_cb(ctx) -> None:
 # ============================================================= admin side
 
 def on_customer_cb(ctx) -> None:
-    if not ctx.get("is_admin") and not ctx.get("is_super_owner"):
+    args = ctx.get("args") or []
+    # Mixed encoding: "cu:<id>:<op>" (digit first) or "cu:<op>[:<arg>]".
+    if args and args[0].isdigit():
+        cid, op = int(args[0]), (args[1] if len(args) > 1 else "")
+        rest = args[2:]
+    else:
+        cid, op, rest = None, (args[0] if args else ""), args[1:]
+
+    if op == "me":
+        if ctx.get("is_customer"):
+            _my_profile(ctx)
+        else:
+            _deny(ctx, "شما مشتری ثبت‌شده‌ای نیستید.")
+        return
+
+    staff_view_only = op in ("view", "tickets")
+    if not (ctx.get("is_admin") or ctx.get("is_super_owner")
+            or (staff_view_only and ctx.get("is_staff"))):
         _deny(ctx)
         return
-    args = ctx.get("args") or []
-    op = args[0] if args else ""
-    if op == "new":
+
+    if op == "block" and cid:
+        _set_blocked(ctx, cid, 1)
+    elif op == "unblock" and cid:
+        _set_blocked(ctx, cid, 0)
+    elif op == "new":
         _start_add(ctx)
     elif op == "search":
         _start_search(ctx)
-    elif op == "view" and len(args) > 1:
-        _view(ctx, args[1])
-    elif op == "tickets" and len(args) > 1:
-        _tickets(ctx, args[1])
-    elif op == "tag" and len(args) > 1:
-        _start_tag(ctx, args[1])
-    elif op == "close" and len(args) > 1:
-        _remove(ctx, args[1])
+    elif op == "view" and cid:
+        _view(ctx, cid)
+    elif op == "tickets" and cid:
+        _tickets(ctx, cid)
+    elif op == "tag" and cid:
+        _start_tag(ctx, cid)
+    elif op == "close" and cid:
+        _remove(ctx, cid)
     elif op == "list":
-        _list(ctx, int(args[1]) if len(args) > 1 and args[1].isdigit() else 1)
+        _list(ctx, int(rest[0]) if rest and rest[0].isdigit() else 1)
     else:
         _list(ctx, 1)
+
+
+def _my_profile(ctx) -> None:
+    """Customer's own card: who they are, ticket count, status."""
+    customer = ctx.get("customer")
+    if not customer:
+        bot.send(ctx["chat_id"], "شما هنوز مشتری ثبت‌شده‌ای نیستید. "
+                 "اگر لینک دعوت دارید، از آن استفاده کنید.")
+        return
+    tickets = repo.customer_tickets(customer["id"], limit=5)
+    from formatters import human_dt, mention
+    lines = [
+        f"<b>پروفایل من</b> {mention(customer['tg_id'], customer['name'], customer['username'])}",
+        f"شناسه: <code>{customer['tg_id']}</code>",
+        f"کسب‌وکار: {esc(customer.get('tenant_name') or '-')}",
+        f"عضویت از: {human_dt(customer['created_at'])}",
+        f"تیکت‌های من: {len(tickets)}",
+    ]
+    bot.send(ctx["chat_id"], "\n".join(lines),
+             kb.markup([kb.btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU), style="primary")]))
+
+
+def _set_blocked(ctx, customer_id: int, blocked: int) -> None:
+    if not ctx.get("is_admin"):
+        bot.send(ctx["chat_id"], "فقط ادمین.")
+        return
+    customer = repo.get_customer(customer_id)
+    if not customer or customer["tenant_id"] != _tenant(ctx):
+        bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
+        return
+    repo.set_customer_blocked(customer_id, blocked)
+    audit.log(_tenant(ctx), ctx["tg_id"],
+              "customer.block" if blocked else "customer.unblock",
+              target=customer["tg_id"])
+    verb = "مسدود" if blocked else "آزاد"
+    bot.send(ctx["chat_id"], f"مشتری {verb} شد.")
+    text, keyboard = menus.screen_customer_detail(repo.get_customer(customer_id))
+    bot.send(ctx["chat_id"], text, keyboard)
 
 
 def _start_add(ctx) -> None:
@@ -217,10 +290,8 @@ def _list(ctx, page: int = 1) -> None:
     bot.send(ctx["chat_id"], text, keyboard)
 
 
-def _view(ctx, raw_id: str) -> None:
-    if not raw_id.isdigit():
-        return
-    customer = repo.get_customer(int(raw_id))
+def _view(ctx, raw_id) -> None:
+    customer = repo.get_customer(raw_id)
     if not customer or customer["tenant_id"] != _tenant(ctx):
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return
@@ -228,10 +299,8 @@ def _view(ctx, raw_id: str) -> None:
     bot.send(ctx["chat_id"], text, keyboard)
 
 
-def _tickets(ctx, raw_id: str) -> None:
-    if not raw_id.isdigit():
-        return
-    customer = repo.get_customer(int(raw_id))
+def _tickets(ctx, raw_id) -> None:
+    customer = repo.get_customer(raw_id)
     if not customer or customer["tenant_id"] != _tenant(ctx):
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return
@@ -241,10 +310,8 @@ def _tickets(ctx, raw_id: str) -> None:
     bot.send(ctx["chat_id"], text, keyboard)
 
 
-def _start_tag(ctx, raw_id: str) -> None:
-    if not raw_id.isdigit():
-        return
-    customer = repo.get_customer(int(raw_id))
+def _start_tag(ctx, raw_id) -> None:
+    customer = repo.get_customer(raw_id)
     if not customer or customer["tenant_id"] != _tenant(ctx):
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return
@@ -261,7 +328,7 @@ def on_state_tag(ctx) -> None:
     if not raw_id or not str(raw_id).isdigit():
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return
-    customer = repo.get_customer(int(raw_id))
+    customer = repo.get_customer(raw_id)
     if not customer or customer["tenant_id"] != tenant_id:
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return
@@ -276,10 +343,8 @@ def on_state_tag(ctx) -> None:
     bot.send(ctx["chat_id"], "تگ ذخیره شد." if tag else "تگ حذف شد.")
 
 
-def _remove(ctx, raw_id: str) -> None:
-    if not raw_id.isdigit():
-        return
-    customer = repo.get_customer(int(raw_id))
+def _remove(ctx, raw_id) -> None:
+    customer = repo.get_customer(raw_id)
     if not customer or customer["tenant_id"] != _tenant(ctx):
         bot.send(ctx["chat_id"], "مشتری پیدا نشد.")
         return

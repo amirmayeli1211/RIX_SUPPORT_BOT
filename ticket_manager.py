@@ -37,6 +37,10 @@ def customer_message(customer, body: str, file_id: str | None = None,
                      file_type: str | None = None) -> int:
     """Append a message to the customer's open ticket (creating one if they
     have none open). Returns the ticket id."""
+    if customer.get("blocked"):
+        # Handlers already refuse blocked customers; enforce here too so no
+        # other entry point (future webhook, import, ...) can slip past.
+        raise TicketError("دسترسی شما نزد این کسب‌وکار مسدود است.")
     tenant_id = customer["tenant_id"]
     ticket = repo.open_ticket_for(customer["id"])
     if ticket is None:

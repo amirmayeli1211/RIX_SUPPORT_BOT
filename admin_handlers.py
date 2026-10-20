@@ -50,6 +50,8 @@ def on_admin_cb(ctx) -> None:
         _start_add_operator(ctx)
     elif op == "customers":
         _customers(ctx)
+    elif op == "invite":
+        _invite_link(ctx)
     elif op == "report":
         _report(ctx)
     elif op == "audit":
@@ -147,6 +149,27 @@ def _customers(ctx) -> None:
     text = (f"<b>مشتریان</b>\nکل: {total} | در انتظار وریفای: {pending}\n\n"
             "برای افزودن، آیدی عددی مشتری را بدهید تا کد تأیید برود.")
     bot.send(ctx["chat_id"], text, kb.admin_customers_menu())
+
+
+def _invite_link(ctx) -> None:
+    """Deep link that registers whoever taps it as this tenant's customer."""
+    import tenant_manager
+    from keyboards import btn, markup
+    tenant_id = ctx["tenant_id"]
+    link = tenant_manager.invite_link(tenant_id)
+    tenant = repo.get_tenant(tenant_id)
+    text = (
+        f"<b>لینک دعوت مشتریان «{esc(tenant['name'])}»</b>\n\n"
+        f"<code>{esc(link)}</code>\n\n"
+        "هر کس این لینک را باز کند، مشتری همین کسب‌وکار می‌شود و "
+        "می‌تواند تیکت بزند. لینک ثابت است و بارها قابل استفاده."
+    )
+    keyboard = markup(
+        [btn("کپی لینک", copy_text=link, style="primary"),
+         btn("ارسال برای دیگران", url=f"https://t.me/share/url?url={esc(link)}")],
+        [btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU))],
+    )
+    bot.send(ctx["chat_id"], text, keyboard)
 
 
 def _report(ctx) -> None:

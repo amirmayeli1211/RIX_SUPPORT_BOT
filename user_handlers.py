@@ -40,11 +40,13 @@ def on_start(ctx) -> None:
             return
         _send_menu(ctx)
         return
-    tenant_name = ctx.get("tenant_name") or ""
+    # Unregistered visitor: welcome text plus the same menu everyone else
+    # gets (currently just راهنا, but never a dead single button).
+    text, keyboard = menus.screen_menu(ctx)
     bot.send(ctx["chat_id"],
              "سلام! 👋\nاین ربات پشتیبانی است.\nاگر مشتری هستید، ادمین شما را اضافه می‌کند "
-             "و کد تأیید برایتان می‌آید.",
-             kb.markup([kb.btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU), style="primary")]))
+             "و کد تأیید برایتان می‌آید.\n\n" + text,
+             keyboard)
 
 
 def on_menu(ctx) -> None:
@@ -57,6 +59,40 @@ def on_panel(ctx) -> None:
         on_start(ctx)
         return
     on_nav(_nav_ctx(ctx, "team_open"))
+
+
+def on_join_link(ctx, payload: str) -> None:
+    """Deep link from an invite: become a customer of that tenant only."""
+    import audit
+    from formatters import esc
+    parts = payload.split("_", 2)
+    if len(parts) != 3 or not parts[1].isdigit():
+        bot.send(ctx["chat_id"], "لینک دعوت نامعتبر است.")
+        return
+    tenant_id = int(parts[1])
+    tenant = repo.get_tenant(tenant_id)
+    code = repo.ensure_invite_code(tenant_id) if tenant else ""
+    if not tenant or tenant["status"] != "active" or parts[2] != code:
+        bot.send(ctx["chat_id"], "لینک دعوت معتبر نیست یا منقضی شده است.")
+        return
+    member = repo.member(tenant_id, ctx["tg_id"])
+    if member:
+        bot.send(ctx["chat_id"], "شما عضو این تیم هستید؛ نیازی به دعوت نیست.")
+        return
+    existing = repo.customer_by_tg(ctx["tg_id"], tenant_id)
+    if existing and existing.get("blocked"):
+        bot.send(ctx["chat_id"], "دسترسی شما نزد این کسب‌وکار مسدود است.")
+        return
+    if not existing:
+        repo.add_customer(tenant_id, ctx["tg_id"], name=ctx.get("name"),
+                          username=ctx.get("username"), verified_at=db.now())
+        audit.log(tenant_id, ctx["tg_id"], audit.Act.CUSTOMER_VERIFY,
+                  target=ctx["tg_id"], detail="invite-link")
+    bot.send(ctx["chat_id"],
+             f"به پشتیبانی «{esc(tenant['name'])}» خوش آمدید ✅\n"
+             "از منوی زیر می‌توانید تیکت بزنید:",
+             kb.main_menu(is_customer=True, is_staff=False, is_admin=False,
+                          is_owner=False, has_open_ticket=False))
 
 
 def on_help(ctx) -> None:

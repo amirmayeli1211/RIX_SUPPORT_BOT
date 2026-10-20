@@ -8,6 +8,7 @@ inspect the boolean return only when the result changes their flow (e.g.
 from __future__ import annotations
 
 import bot
+import callbacks as cb
 import keyboards
 import operator_manager
 import repositories as repo
@@ -24,6 +25,19 @@ def _try(chat_id: int | None, text: str, keyboard=None) -> bool:
         return False
 
 
+def ticket_alert_keyboard(ticket) -> dict | None:
+    """دیدم / مشاهده / پروفایل مشتری - act straight from the notification."""
+    tid = ticket["id"]
+    cid = ticket.get("customer_id") or 0
+    rows = [
+        [keyboards.btn("دیدم", cb.enc(cb.TK, tid, "seen"), style="primary"),
+         keyboards.btn("مشاهده تیکت", cb.enc(cb.TK, tid, "view"), style="success")],
+        [keyboards.btn("پروفایل مشتری", cb.enc(cb.CU, cid, "view") if cid
+                       else cb.enc(cb.NAV, cb.MENU))],
+    ]
+    return keyboards.markup(*rows)
+
+
 def new_ticket(ticket, assigned_tg_id: int | None) -> None:
     """Alert staff about a fresh customer ticket."""
     card = ticket_card(ticket)
@@ -31,9 +45,7 @@ def new_ticket(ticket, assigned_tg_id: int | None) -> None:
         extra = ""
         if assigned_tg_id == tg:
             extra = "\n<b>این تیکت به شما اختصاص یافت.</b>"
-        _try(tg, f"تیکت جدید:\n{card}{extra}",
-             keyboards.main_menu(is_customer=False, is_staff=True, is_admin=False,
-                                 is_owner=False, has_open_ticket=False))
+        _try(tg, f"تیکت جدید:\n{card}{extra}", ticket_alert_keyboard(ticket))
     _try(ticket["customer_tg_id"],
          f"تیکت #{ticket['number']} ثبت شد. به‌زودی پاسخ می‌دهیم.")
 
@@ -49,8 +61,7 @@ def customer_replied(ticket) -> None:
     excerpt = esc((body["body"] or "").strip()[:300]) if body else ""
     for tg in targets[:15]:
         _try(tg, f"پیام جدید مشتری در تیکت #{ticket['number']}:\n{excerpt}",
-             keyboards.main_menu(is_customer=False, is_staff=True, is_admin=False,
-                                 is_owner=False, has_open_ticket=False))
+             ticket_alert_keyboard(ticket))
 
 
 def agent_replied(ticket, body: str) -> bool:

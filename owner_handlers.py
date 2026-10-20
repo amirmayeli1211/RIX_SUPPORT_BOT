@@ -31,17 +31,21 @@ def on_owner_cb(ctx) -> None:
         bot.send(ctx["chat_id"], "دسترسی نداری.", kb.cancel_button())
         return
     args = ctx.get("args") or []
-    op = args[0] if args else ""
+    # Mixed encoding: "ow:<id>:<op>" (digit first) or "ow:<op>[:<arg>]".
+    if args and args[0].isdigit():
+        tid, op = int(args[0]), (args[1] if len(args) > 1 else "")
+    else:
+        tid, op = None, (args[0] if args else "")
     if op == "list":
         _list(ctx)
     elif op == "new":
         _start_new(ctx)
-    elif op == "view" and len(args) > 1 and args[1].isdigit():
-        _view(ctx, int(args[1]))
-    elif op == "enable" and len(args) > 1 and args[1].isdigit():
-        _set_status(ctx, int(args[1]), "active")
-    elif op == "disable" and len(args) > 1 and args[1].isdigit():
-        _set_status(ctx, int(args[1]), "disabled")
+    elif op == "view" and tid:
+        _view(ctx, tid)
+    elif op == "enable" and tid:
+        _set_status(ctx, tid, "active")
+    elif op == "disable" and tid:
+        _set_status(ctx, tid, "disabled")
     elif op == "report":
         bot.send(ctx["chat_id"], reports.platform_report())
     else:

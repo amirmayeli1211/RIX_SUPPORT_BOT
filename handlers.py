@@ -84,10 +84,9 @@ def enrich(ctx: dict) -> dict:
             "customer_tenant_id": customer["tenant_id"],
             "has_open_ticket": repo.open_ticket_for(customer["id"]) is not None,
         })
-    if not member and not customer and config_owner_is(tg):
-        # Super-owner (OWNER_TG_ID) with no membership yet: give them the
-        # owner menu anyway, otherwise they can never create the first tenant
-        # (the panel that creates tenants is itself behind the owner menu).
+    if config_owner_is(tg):
+        # The platform owner always keeps the owner block in the menu, whether
+        # or not they later hold a membership in some tenant.
         ctx["is_super_owner"] = True
         ctx["is_owner"] = True
     return ctx
@@ -161,16 +160,21 @@ def _route_msg(ctx) -> None:
     state_row = repo.get_state(ctx["tg_id"])
     state = state_row["state"] if state_row else None
 
+    # Slash commands always win: a user stuck mid-flow must be able to type
+    # /start or /menu to get out, instead of the command being eaten as data.
+    if text.startswith("/"):
+        if state:
+            repo.clear_state(ctx["tg_id"])
+            state = None
+        _route_command(ctx, text.split()[0].split("@")[0])
+        return
+
     if state:
         ctx["state"] = state
         ctx["state_data"] = state_row["data"] if state_row else None
         handled = _route_state(ctx, state)
         if handled:
             return
-
-    if text.startswith("/"):
-        _route_command(ctx, text.split()[0].split("@")[0])
-        return
 
     # A live verification code from a user we just invited?
     if verification.confirm(ctx["tg_id"], text):
@@ -213,6 +217,13 @@ def _route_state(ctx, state: str) -> bool:
 
 def _route_command(ctx, command: str) -> None:
     import user_handlers
+    # /start join_<tenant>_<code>  ->  register as that tenant's customer
+    if command == "/start":
+        parts = ctx.get("text", "").split(maxsplit=1)
+        payload = parts[1].strip() if len(parts) > 1 else ""
+        if payload.startswith("join_"):
+            user_handlers.on_join_link(ctx, payload)
+            return
     mapping = {
         "/start": user_handlers.on_start,
         "/menu": user_handlers.on_menu,

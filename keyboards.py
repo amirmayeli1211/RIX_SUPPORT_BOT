@@ -38,28 +38,38 @@ def back(target: str = cb.MENU) -> dict:
 # --------------------------------------------------------------- main menu
 
 def main_menu(*, is_customer: bool, is_staff: bool, is_admin: bool,
-              is_owner: bool, has_open_ticket: bool) -> dict | None:
+              is_owner: bool, has_open_ticket: bool,
+              is_super_owner: bool = False) -> dict | None:
+    """Everything this user may do, all rows visible at once.
+
+    Rows are appended per role and never hidden behind submenus: a customer
+    sees only customer actions, an agent sees customer+agent, an admin adds
+    the admin block, an owner adds the owner block. Nothing is culled by
+    "not ready yet" - a button whose screen needs data explains that on tap.
+    """
     rows: list[list[dict]] = []
     if is_customer:
         row = [btn("تیکت جدید", cb.enc(cb.NAV, "new_ticket"), style="success")]
         if has_open_ticket:
             row.append(btn("تیکت باز من", cb.enc(cb.NAV, "my_open")))
         rows.append(row)
-        rows.append([btn("تیکت‌های من", cb.enc(cb.NAV, "my_tickets"))])
+        rows.append([btn("تیکت‌های من", cb.enc(cb.NAV, "my_tickets")),
+                     btn("پروفایل من", cb.enc(cb.CU, "me", "view"))])
     if is_staff:
         rows.append([btn("تیکت‌های باز تیم", cb.enc(cb.NAV, "team_open"), style="primary"),
                      btn("تیکت‌های من", cb.enc(cb.NAV, "assigned"))])
+        rows.append([btn("جست‌وجوی مشتری", cb.enc(cb.CU, "search", "start")),
+                     btn("گزارش", cb.enc(cb.AD, "report"))])
     if is_admin:
         rows.append([btn("تنظیمات", cb.enc(cb.AD, "settings")),
                      btn("اپراتورها", cb.enc(cb.AD, "operators"))])
         rows.append([btn("مشتریان", cb.enc(cb.AD, "customers")),
-                     btn("گزارش", cb.enc(cb.AD, "report"))])
-    if is_owner:
+                     btn("لینک دعوت مشتریان", cb.enc(cb.AD, "invite"), style="primary")])
+    if is_owner or is_super_owner:
         rows.append([btn("کسب‌وکارها", cb.enc(cb.OW, "list")),
-                     btn("لاگ اقدامات", cb.enc(cb.AD, "audit"))])
-    if not rows:
-        # A user with no role yet must still get something tappable.
-        rows.append([btn("راهنما", cb.enc(cb.NAV, "help"), style="primary")])
+                     btn("گزارش سراسری", cb.enc(cb.OW, "report"))])
+        rows.append([btn("لاگ اقدامات", cb.enc(cb.AD, "audit"))])
+    rows.append([btn("راهنما", cb.enc(cb.NAV, "help"))])
     return markup(*rows)
 
 
@@ -89,16 +99,20 @@ def ticket_list(tickets, prefix: str = cb.TK, op: str = "view",
 
 def ticket_detail(ticket, *, is_staff: bool) -> dict | None:
     tid = ticket["id"]
+    cid = ticket.get("customer_id") or 0
     rows: list[list[dict]] = []
     if is_staff:
         rows.append([btn("پاسخ", cb.enc(cb.TK, tid, "reply"), style="success"),
-                     btn("یادداشت داخلی", cb.enc(cb.TK, tid, "note"))])
-        rows.append([btn("اولویت", cb.enc(cb.TK, tid, "prio")),
+                     btn("دیدم", cb.enc(cb.TK, tid, "seen"), style="primary")])
+        rows.append([btn("یادداشت داخلی", cb.enc(cb.TK, tid, "note")),
+                     btn("اولویت", cb.enc(cb.TK, tid, "prio")),
                      btn("انتقال", cb.enc(cb.TK, tid, "transfer"))])
+        rows.append([btn("پروفایل مشتری", cb.enc(cb.CU, cid, "view") if cid else cb.enc(cb.NAV, cb.MENU))])
         if ticket["status"] != "closed":
             rows.append([btn("بستن تیکت", cb.enc(cb.TK, tid, cb.CLOSE), style="danger")])
         else:
             rows.append([btn("بازگشایی", cb.enc(cb.TK, tid, "reopen"), style="primary")])
+        rows.append([btn("حذف تیکت", cb.enc(cb.TK, tid, "delete"), style="danger")])
     rows.append([btn("بروزرسانی", cb.enc(cb.TK, tid, cb.REFRESH))])
     rows.append([btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU))])
     return markup(*rows)
@@ -153,14 +167,18 @@ def customer_list(customers, next_cb: str | None = None, prev_cb: str | None = N
     return markup(*rows)
 
 
-def customer_detail(customer, *, ticket_count: int = 0) -> dict | None:
+def customer_detail(customer) -> dict | None:
     cid = customer["id"]
     rows = [
         [btn("تیکت‌ها", cb.enc(cb.CU, cid, "tickets")),
          btn("تگ", cb.enc(cb.CU, cid, "tag"))],
-        [btn("حذف مشتری", cb.enc(cb.CU, cid, cb.CLOSE), style="danger")],
-        [btn("بازگشت", cb.enc(cb.AD, "customers"))],
     ]
+    if customer.get("blocked"):
+        rows.append([btn("آزادسازی مشتری", cb.enc(cb.CU, cid, "unblock"), style="success")])
+    else:
+        rows.append([btn("مسدودسازی", cb.enc(cb.CU, cid, "block"), style="danger")])
+    rows.append([btn("حذف مشتری", cb.enc(cb.CU, cid, cb.CLOSE), style="danger")])
+    rows.append([btn("بازگشت", cb.enc(cb.AD, "customers"))])
     return markup(*rows)
 
 

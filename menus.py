@@ -23,6 +23,7 @@ def _menu_row(ctx) -> dict | None:
         is_admin=ctx.get("is_admin", False),
         is_owner=ctx.get("is_owner", False),
         has_open_ticket=ctx.get("has_open_ticket", False),
+        is_super_owner=ctx.get("is_super_owner", False),
     )
 
 

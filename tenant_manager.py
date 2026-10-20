@@ -49,6 +49,20 @@ def get_or_raise(tenant_id: int):
     return tenant
 
 
+def invite_link(tenant_id: int) -> str:
+    """Deep link that registers the tapper as a customer of this tenant only."""
+    import config
+    code = repo.ensure_invite_code(tenant_id)
+    username = config.BOT_USERNAME
+    if not username:
+        import bot as _bot
+        try:
+            username = _bot.me().get("username", "")
+        except _bot.TgError:
+            username = ""
+    return f"https://t.me/{username}?start=join_{tenant_id}_{code}"
+
+
 def tenants_of_owner(tg_id: int):
     """Tenants this user owns (or all, for the super-owner)."""
     import config

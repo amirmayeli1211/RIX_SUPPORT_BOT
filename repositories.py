@@ -137,6 +137,25 @@ def mark_customer_verified(tenant_id: int, tg_id: int) -> None:
           (db.now(), tenant_id, tg_id))
 
 
+def ensure_invite_code(tenant_id: int) -> str:
+    """Stable per-tenant invite code, generated once."""
+    row = db.one("SELECT invite_code FROM tenants WHERE id=?", (tenant_id,))
+    code = (row or {}).get("invite_code")
+    if not code:
+        import secrets
+        code = secrets.token_urlsafe(8)
+        db.ex("UPDATE tenants SET invite_code=? WHERE id=?", (code, tenant_id))
+    return code
+
+
+def set_customer_blocked(customer_id: int, blocked: int) -> None:
+    db.ex("UPDATE customers SET blocked=? WHERE id=?", (1 if blocked else 0, customer_id))
+
+
+def delete_ticket(ticket_id: int) -> None:
+    db.ex("DELETE FROM tickets WHERE id=?", (ticket_id,))
+
+
 def set_customer_tag(customer_id: int, tag) -> None:
     db.ex("UPDATE customers SET tag=? WHERE id=?", (tag, customer_id))
 
