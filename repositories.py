@@ -148,6 +148,57 @@ def ensure_invite_code(tenant_id: int) -> str:
     return code
 
 
+def ensure_staff_code(tenant_id: int) -> str:
+    """Stable per-tenant staff invite code, generated once."""
+    row = db.one("SELECT staff_code FROM tenants WHERE id=?", (tenant_id,))
+    code = (row or {}).get("staff_code")
+    if not code:
+        import secrets
+        code = secrets.token_urlsafe(8)
+        db.ex("UPDATE tenants SET staff_code=? WHERE id=?", (code, tenant_id))
+    return code
+
+
+def bind_group(tenant_id: int, group_chat_id: int) -> None:
+    db.ex("UPDATE tenants SET group_chat_id=? WHERE id=?", (group_chat_id, tenant_id))
+
+
+def unbind_group(tenant_id: int, group_chat_id: int) -> None:
+    db.ex("UPDATE tenants SET group_chat_id=NULL WHERE id=? AND group_chat_id=?",
+          (tenant_id, group_chat_id))
+
+
+def tenant_by_group(group_chat_id: int):
+    return db.one("SELECT * FROM tenants WHERE group_chat_id=?", (group_chat_id,))
+
+
+def customer_any(tenant_id: int, tg_id: int):
+    """Customer row regardless of verification (group members are pre-trusted)."""
+    return db.one(
+        "SELECT * FROM customers WHERE tg_id=? AND tenant_id=? ORDER BY id LIMIT 1",
+        (tg_id, tenant_id))
+
+
+def mark_ticket_group(ticket_id: int, group_chat_id: int, msg_id: int) -> None:
+    db.ex("UPDATE tickets SET group_chat_id=?, last_group_msg_id=? WHERE id=?",
+          (group_chat_id, msg_id, ticket_id))
+
+
+def broadcast_targets(tenant_id: int, tag: str | None = None):
+    """Verified, unblocked customers to receive a broadcast."""
+    if tag:
+        return db.q("SELECT tg_id FROM customers WHERE tenant_id=? AND verified_at IS NOT NULL"
+                    " AND blocked=0 AND tag=?", (tenant_id, tag))
+    return db.q("SELECT tg_id FROM customers WHERE tenant_id=? AND verified_at IS NOT NULL"
+                " AND blocked=0", (tenant_id,))
+
+
+def customer_tags(tenant_id: int) -> list[str]:
+    return [r["tag"] for r in db.q(
+        "SELECT DISTINCT tag FROM customers WHERE tenant_id=? AND tag IS NOT NULL"
+        " AND tag != '' ORDER BY tag", (tenant_id,))]
+
+
 def set_customer_blocked(customer_id: int, blocked: int) -> None:
     db.ex("UPDATE customers SET blocked=? WHERE id=?", (1 if blocked else 0, customer_id))
 
@@ -210,7 +261,8 @@ def create_ticket(tenant_id: int, customer_id: int, subject: str, priority: str 
 def get_ticket(ticket_id: int):
     return db.one(
         "SELECT tk.*, c.tg_id AS customer_tg_id, c.name AS customer_name,"
-        " c.username AS customer_username, t.name AS tenant_name"
+        " c.username AS customer_username, c.verified_at AS customer_verified,"
+        " c.blocked AS customer_blocked, t.name AS tenant_name"
         " FROM tickets tk"
         " JOIN customers c ON c.id=tk.customer_id"
         " JOIN tenants t ON t.id=tk.tenant_id WHERE tk.id=?",

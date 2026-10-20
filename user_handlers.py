@@ -95,6 +95,90 @@ def on_join_link(ctx, payload: str) -> None:
                           is_owner=False, has_open_ticket=False))
 
 
+def on_staff_link(ctx, payload: str) -> None:
+    """Deep link: the tapper becomes an OPERATOR of that tenant."""
+    import audit
+    from formatters import esc
+    parts = payload.split("_", 2)
+    if len(parts) != 3 or not parts[1].isdigit():
+        bot.send(ctx["chat_id"], "لینک دعوت نامعتبر است.")
+        return
+    tenant_id = int(parts[1])
+    tenant = repo.get_tenant(tenant_id)
+    code = repo.ensure_staff_code(tenant_id) if tenant else ""
+    if not tenant or tenant["status"] != "active" or parts[2] != code:
+        bot.send(ctx["chat_id"], "لینک دعوت معتبر نیست یا منقضی شده است.")
+        return
+    existing = repo.member(tenant_id, ctx["tg_id"])
+    if existing:
+        bot.send(ctx["chat_id"],
+                 f"شما همین حالا عضو تیم «{esc(tenant['name'])}» هستید.",
+                 kb.main_menu(is_customer=False, is_staff=True,
+                              is_admin=existing["role"] in ("owner", "admin"),
+                              is_owner=existing["role"] == "owner",
+                              has_open_ticket=False))
+        return
+    customer = repo.customer_by_tg(ctx["tg_id"], tenant_id)
+    if customer:
+        bot.send(ctx["chat_id"],
+                 "شما مشتری این کسب‌وکار هستید؛ برای عضویت در تیم، "
+                 "ادمین باید شما را اضافه کند.")
+        return
+    repo.add_member(tenant_id, ctx["tg_id"], Role.AGENT, name=ctx.get("name"),
+                    username=ctx.get("username"))
+    audit.log(tenant_id, ctx["tg_id"], audit.Act.MEMBER_ADD, detail="staff-invite-link")
+    bot.send(ctx["chat_id"],
+             f"به تیم «{esc(tenant['name'])}» پیوستید 🎧\n"
+             "از این پس تیکت‌های مشتریان این کسب‌وکار به شما نمایش داده می‌شود.",
+             kb.main_menu(is_customer=False, is_staff=True, is_admin=False,
+                          is_owner=False, has_open_ticket=False))
+
+
+def on_group_command(ctx) -> None:
+    """/bind and /unbind inside a Telegram group."""
+    import audit
+    from formatters import esc
+    text = (ctx.get("text") or "").split()
+    cmd = text[0].split("@")[0].lower() if text else ""
+    member = repo.best_membership(ctx["tg_id"])
+    import config
+    is_super = bool(config.OWNER_TG_ID and ctx["tg_id"] == config.OWNER_TG_ID)
+    if cmd == "/bind":
+        if not is_super and (not member or member["role"] not in ("owner", "admin")):
+            bot.send(ctx["chat_id"], "فقط مالک/ادمین کسب‌وکار می‌تواند گروه را متصل کند.")
+            return
+        # tenant: super-owner picks via /bind <id>; others use their own
+        if is_super and len(text) > 1 and text[1].isdigit():
+            tenant_id = int(text[1])
+        elif member:
+            tenant_id = member["tenant_id"]
+        else:
+            bot.send(ctx["chat_id"], "شناسه کسب‌وکار را هم بدهید: /bind <شناسه>")
+            return
+        tenant = repo.get_tenant(tenant_id)
+        if not tenant:
+            bot.send(ctx["chat_id"], "کسب‌وکار پیدا نشد.")
+            return
+        repo.bind_group(tenant_id, ctx["chat_id"])
+        audit.log(tenant_id, ctx["tg_id"], "group.bind", target=ctx["chat_id"])
+        bot.send(ctx["chat_id"],
+                 f"این گروه به «{esc(tenant['name'])}» متصل شد ✅\n"
+                 "هر پیام مشتریان اینجا تیکت می‌شود و اپراتورها اعلان می‌گیرند.")
+    elif cmd == "/unbind":
+        if not member and not is_super:
+            bot.send(ctx["chat_id"], "دسترسی ندارید.")
+            return
+        tenant = repo.tenant_by_group(ctx["chat_id"])
+        if not tenant:
+            bot.send(ctx["chat_id"], "این گروه به چیزی متصل نیست.")
+            return
+        repo.unbind_group(tenant["id"], ctx["chat_id"])
+        audit.log(tenant["id"], ctx["tg_id"], "group.unbind", target=ctx["chat_id"])
+        bot.send(ctx["chat_id"], "اتصال گروه قطع شد.")
+    else:
+        bot.send(ctx["chat_id"], "دستورات گروهی: /bind  |  /unbind")
+
+
 def on_help(ctx) -> None:
     text, keyboard = menus.screen_help()
     bot.send(ctx["chat_id"], text, keyboard)

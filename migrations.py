@@ -119,6 +119,14 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         "ALTER TABLE tenants ADD COLUMN invite_code TEXT",
         "ALTER TABLE customers ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0",
     ]),
+    (5, [
+        # Platform layer: companies onboard their OWN operators via a staff
+        # invite link, and can bind a Telegram group as a ticket source.
+        "ALTER TABLE tenants ADD COLUMN staff_code TEXT",
+        "ALTER TABLE tenants ADD COLUMN group_chat_id INTEGER",
+        "ALTER TABLE tickets ADD COLUMN group_chat_id INTEGER",
+        "ALTER TABLE tickets ADD COLUMN last_group_msg_id INTEGER",
+    ]),
 ]
 
 

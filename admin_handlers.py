@@ -156,17 +156,23 @@ def _invite_link(ctx) -> None:
     import tenant_manager
     from keyboards import btn, markup
     tenant_id = ctx["tenant_id"]
-    link = tenant_manager.invite_link(tenant_id)
+    cust_link = tenant_manager.invite_link(tenant_id)
+    staff_link = tenant_manager.staff_invite_link(tenant_id)
     tenant = repo.get_tenant(tenant_id)
+    group = tenant.get("group_chat_id")
     text = (
-        f"<b>لینک دعوت مشتریان «{esc(tenant['name'])}»</b>\n\n"
-        f"<code>{esc(link)}</code>\n\n"
-        "هر کس این لینک را باز کند، مشتری همین کسب‌وکار می‌شود و "
-        "می‌تواند تیکت بزند. لینک ثابت است و بارها قابل استفاده."
+        f"<b>لینک‌های دعوت «{esc(tenant['name'])}»</b>\n\n"
+        f"<b>👥 اپراتورها:</b>\n<code>{esc(staff_link)}</code>\n"
+        "هر کس این لینک را بزند، اپراتور این کسب‌وکار می‌شود.\n\n"
+        f"<b>🎫 مشتریان:</b>\n<code>{esc(cust_link)}</code>\n"
+        "هر کس این لینک را بزند، مشتری می‌شود و می‌تواند تیکت بزند.\n\n"
+        f"<b>👥 گروه پشتیبانی:</b> {'متصل است ✅' if group else 'متصل نیست'}\n"
+        "برای اتصال، ربات را به گروه اضافه کنید و در همان گروه /bind بزنید."
     )
     keyboard = markup(
-        [btn("کپی لینک", copy_text=link, style="primary"),
-         btn("ارسال برای دیگران", url=f"https://t.me/share/url?url={esc(link)}")],
+        [btn("کپی لینک اپراتورها", copy_text=staff_link, style="primary"),
+         btn("کپی لینک مشتریان", copy_text=cust_link, style="success")],
+        [btn("ارسال لینک مشتریان", url=f"https://t.me/share/url?url={esc(cust_link)}")],
         [btn("منوی اصلی", cb.enc(cb.NAV, cb.MENU))],
     )
     bot.send(ctx["chat_id"], text, keyboard)

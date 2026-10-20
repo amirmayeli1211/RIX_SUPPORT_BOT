@@ -63,6 +63,20 @@ def invite_link(tenant_id: int) -> str:
     return f"https://t.me/{username}?start=join_{tenant_id}_{code}"
 
 
+def staff_invite_link(tenant_id: int) -> str:
+    """Deep link that adds the tapper as an OPERATOR of this tenant."""
+    import config
+    code = repo.ensure_staff_code(tenant_id)
+    username = config.BOT_USERNAME
+    if not username:
+        import bot as _bot
+        try:
+            username = _bot.me().get("username", "")
+        except _bot.TgError:
+            username = ""
+    return f"https://t.me/{username}?start=staff_{tenant_id}_{code}"
+
+
 def tenants_of_owner(tg_id: int):
     """Tenants this user owns (or all, for the super-owner)."""
     import config

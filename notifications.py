@@ -15,11 +15,11 @@ import repositories as repo
 from formatters import esc, mention, ticket_card
 
 
-def _try(chat_id: int | None, text: str, keyboard=None) -> bool:
+def _try(chat_id: int | None, text: str, keyboard=None, reply_to=None) -> bool:
     if not chat_id:
         return False
     try:
-        bot.send(chat_id, text, keyboard)
+        bot.send(chat_id, text, keyboard, reply_to=reply_to)
         return True
     except bot.TgError:
         return False
@@ -65,13 +65,25 @@ def customer_replied(ticket) -> None:
 
 
 def agent_replied(ticket, body: str) -> bool:
-    """Notify the customer; True when delivery succeeded."""
+    """Notify the customer; True when delivery succeeded.
+
+    A ticket that came from a bound support group is answered IN that group
+    (as a reply to the customer's last message) unless the customer can be
+    reached privately - group members often never press Start in the bot.
+    """
     ok = _try(ticket["customer_tg_id"],
               f"پاسخ تیکت #{ticket['number']}:\n{esc(body[:800])}")
     if ok:
         _try(ticket["customer_tg_id"], "پاسخ رضایت بخش بود؟",
              keyboards.rating_picker(ticket["id"]))
-    return ok
+        return True
+    group_id = ticket.get("group_chat_id")
+    if group_id:
+        reply_to = ticket.get("last_group_msg_id") or None
+        if _try(group_id, f"پاسخ تیکت #{ticket['number']}:\n{esc(body[:800])}",
+                reply_to=reply_to):
+            return True
+    return False
 
 
 def customer_unreachable(ticket) -> None:

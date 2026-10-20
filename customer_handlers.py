@@ -69,6 +69,46 @@ def _media(ctx):
     return None, None
 
 
+def on_group_message(ctx, tenant) -> None:
+    """A message inside a bound support group becomes a ticket.
+
+    Group members are pre-trusted (the company chose who is in the group),
+    so no verification code is required - the customer row is created with
+    verified_at set. Staff messages in the group are filtered upstream.
+    """
+    body = ctx.get("text") or ctx.get("caption") or ""
+    file_id, file_type = _media(ctx)
+    if not body and not file_id:
+        return
+    if not body:
+        body = "[فایل]"
+    customer = repo.customer_any(tenant["id"], ctx["tg_id"])
+    if customer and customer.get("blocked"):
+        return
+    if not customer:
+        repo.add_customer(tenant["id"], ctx["tg_id"], name=ctx.get("name"),
+                          username=ctx.get("username"), verified_at=db.now())
+        customer = repo.customer_any(tenant["id"], ctx["tg_id"])
+    try:
+        ticket_id = ticket_manager.customer_message(customer, body, file_id, file_type)
+    except ticket_manager.TicketError:
+        return
+    repo.mark_ticket_group(ticket_id, ctx["chat_id"], ctx.get("message_id") or 0)
+    ticket = repo.get_ticket(ticket_id)
+    # Ack in the group only for the ticket's very first message, so a busy
+    # thread does not turn into bot spam. Message count is the only reliable
+    # signal - timestamps have 1s resolution and two messages can share one.
+    is_first = len(repo.list_messages(ticket_id)) == 1
+    if is_first and ticket:
+        try:
+            bot.send(ctx["chat_id"],
+                     f"تیکت #{ticket['number']} برای شما ثبت شد ✅\n"
+                     "پاسخ اپراتورها را همین‌جا دنبال کنید.",
+                     reply_to=ctx.get("message_id"))
+        except bot.TgError:
+            pass
+
+
 def on_state_subject(ctx) -> None:
     customer = ctx["customer"]
     if customer.get("blocked"):

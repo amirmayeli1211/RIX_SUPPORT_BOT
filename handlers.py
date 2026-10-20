@@ -41,9 +41,12 @@ def build_ctx(update: dict) -> dict | None:
     if from_user.get("is_bot"):
         return None  # never let another bot drive this one
     chat = msg.get("chat") or {}
+    chat_type = chat.get("type", "private")
     return {
         "kind": "msg", "tg_id": from_user.get("id", 0),
         "chat_id": chat.get("id") or from_user.get("id", 0),
+        "is_group": chat_type in ("group", "supergroup"),
+        "chat_type": chat_type,
         "text": (msg.get("text") or "").strip(),
         "message_id": msg.get("message_id"),
         "name": from_user.get("first_name"), "username": from_user.get("username"),
@@ -156,6 +159,12 @@ def _route_msg(ctx) -> None:
     import ticket_handlers
     import user_handlers
 
+    # Group chats: only the bound tenant's members' messages matter, and only
+    # plain customer traffic (commands stay private).
+    if ctx.get("is_group"):
+        _route_group(ctx)
+        return
+
     text = ctx.get("text", "")
     state_row = repo.get_state(ctx["tg_id"])
     state = state_row["state"] if state_row else None
@@ -186,6 +195,23 @@ def _route_msg(ctx) -> None:
         return
 
     user_handlers.on_unknown(ctx)
+
+
+def _route_group(ctx) -> None:
+    """Messages inside a bound support group become tickets."""
+    import customer_handlers
+    import user_handlers
+    text = ctx.get("text", "")
+    if text.startswith("/"):
+        user_handlers.on_group_command(ctx)
+        return
+    tenant = repo.tenant_by_group(ctx["chat_id"])
+    if not tenant or tenant["status"] != "active":
+        return  # unbound or disabled tenant: stay silent
+    member = repo.member(tenant["id"], ctx["tg_id"])
+    if member:
+        return  # staff talking in their own group: never becomes a ticket
+    customer_handlers.on_group_message(ctx, tenant)
 
 
 def _route_state(ctx, state: str) -> bool:
@@ -223,6 +249,9 @@ def _route_command(ctx, command: str) -> None:
         payload = parts[1].strip() if len(parts) > 1 else ""
         if payload.startswith("join_"):
             user_handlers.on_join_link(ctx, payload)
+            return
+        if payload.startswith("staff_"):
+            user_handlers.on_staff_link(ctx, payload)
             return
     mapping = {
         "/start": user_handlers.on_start,
