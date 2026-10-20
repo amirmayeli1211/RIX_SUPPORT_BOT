@@ -10,12 +10,81 @@ from __future__ import annotations
 import database as db
 from models import Role, Status
 
+# ------------------------------------------------------------------ plans
+
+def list_plans(active_only: bool = True):
+    if active_only:
+        return db.q("SELECT * FROM plans WHERE active=1 ORDER BY max_shops, id")
+    return db.q("SELECT * FROM plans ORDER BY id")
+
+
+def get_plan(plan_id: int):
+    return db.one("SELECT * FROM plans WHERE id=?", (plan_id,))
+
+
+# ---------------------------------------------------------------- accounts
+
+def create_account(tg_id: int, plan_id: int, name=None) -> int:
+    return db.ex(
+        "INSERT INTO accounts(tg_id, name, plan_id, created_at) VALUES (?,?,?,?)",
+        (tg_id, name, plan_id, db.now()),
+    )
+
+
+def get_account(account_id: int):
+    """Account row joined with its plan (so max_shops/plan_name are present)."""
+    return db.one(
+        "SELECT a.*, p.name AS plan_name, p.max_shops FROM accounts a"
+        " LEFT JOIN plans p ON p.id=a.plan_id WHERE a.id=?", (account_id,))
+
+
+def account_by_tg(tg_id: int):
+    """Active (verified) account for this telegram user, newest first."""
+    return db.one(
+        "SELECT a.*, p.name AS plan_name, p.max_shops FROM accounts a"
+        " LEFT JOIN plans p ON p.id=a.plan_id"
+        " WHERE a.tg_id=? AND a.status='active' ORDER BY a.id DESC LIMIT 1",
+        (tg_id,))
+
+
+def all_accounts():
+    return db.q(
+        "SELECT a.*, p.name AS plan_name, p.max_shops FROM accounts a"
+        " LEFT JOIN plans p ON p.id=a.plan_id ORDER BY a.id DESC")
+
+
+def set_account_status(account_id: int, status: str) -> None:
+    db.ex("UPDATE accounts SET status=? WHERE id=?", (status, account_id))
+
+
+def set_account_plan(account_id: int, plan_id: int) -> None:
+    db.ex("UPDATE accounts SET plan_id=? WHERE id=?", (plan_id, account_id))
+
+
+def mark_account_verified(account_id: int) -> None:
+    db.ex("UPDATE accounts SET verified_at=?, status='active' WHERE id=?",
+          (db.now(), account_id))
+
+
+def account_shops(account_id: int):
+    """Shops (tenants) owned by this account."""
+    return db.q(
+        "SELECT * FROM tenants WHERE account_id=? ORDER BY id", (account_id,))
+
+
+def account_shop_count(account_id: int) -> int:
+    return int(db.scalar("SELECT COUNT(*) FROM tenants WHERE account_id=?",
+                         (account_id,), 0))
+
+
 # ----------------------------------------------------------------- tenants
 
-def create_tenant(name: str, owner_tg_id: int = 0, slug: str | None = None) -> int:
+def create_tenant(name: str, owner_tg_id: int = 0, slug: str | None = None,
+                  account_id: int | None = None) -> int:
     return db.ex(
-        "INSERT INTO tenants(name, slug, owner_tg_id, created_at) VALUES (?,?,?,?)",
-        (name, slug, owner_tg_id, db.now()),
+        "INSERT INTO tenants(name, slug, owner_tg_id, account_id, created_at)"
+        " VALUES (?,?,?,?,?)",
+        (name, slug, owner_tg_id, account_id, db.now()),
     )
 
 
@@ -428,19 +497,20 @@ def all_settings(tenant_id: int) -> dict:
 
 # ------------------------------------------------------------ verify codes
 
-def issue_code(tenant_id: int, tg_id: int, purpose: str) -> str:
+def issue_code(tenant_id: int, tg_id: int, purpose: str, account_id: int | None = None) -> str:
     """Issue a fresh 6-digit code, invalidating any earlier live one."""
     import secrets
     db.ex("UPDATE verify_codes SET consumed_at=? WHERE tg_id=? AND purpose=?"
           " AND consumed_at IS NULL", (db.now(), tg_id, purpose))
     code = f"{secrets.randbelow(900000) + 100000}"
-    db.ex("INSERT INTO verify_codes(tenant_id, tg_id, code, purpose, created_at)"
-          " VALUES (?,?,?,?,?)", (tenant_id, tg_id, code, purpose, db.now()))
+    db.ex("INSERT INTO verify_codes(tenant_id, tg_id, code, purpose, account_id, created_at)"
+          " VALUES (?,?,?,?,?,?)", (tenant_id, tg_id, code, purpose, account_id, db.now()))
     return code
 
 
-def consume_code(tg_id: int, code: str, purpose: str, ttl_seconds: int = 900) -> int | None:
-    """Validate + burn the newest live code. Returns tenant_id or None."""
+def consume_code(tg_id: int, code: str, purpose: str, ttl_seconds: int = 900):
+    """Validate + burn the newest live code. Returns the verify_codes row
+    (has tenant_id and account_id) or None."""
     row = db.one(
         "SELECT * FROM verify_codes WHERE tg_id=? AND purpose=? AND consumed_at IS NULL"
         " ORDER BY id DESC LIMIT 1", (tg_id, purpose))
@@ -449,7 +519,7 @@ def consume_code(tg_id: int, code: str, purpose: str, ttl_seconds: int = 900) ->
     if db.now() - row["created_at"] > ttl_seconds:
         return None
     db.ex("UPDATE verify_codes SET consumed_at=? WHERE id=?", (db.now(), row["id"]))
-    return row["tenant_id"]
+    return row
 
 
 def purge_expired_codes(older_than_ts: int) -> int:

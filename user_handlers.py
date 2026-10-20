@@ -28,6 +28,11 @@ def on_start(ctx) -> None:
     if ctx.get("is_customer"):
         _send_menu(ctx)
         return
+    if ctx.get("is_account") and not ctx.get("is_super_owner"):
+        from menus import screen_account_menu
+        text, keyboard = screen_account_menu(ctx["account"])
+        bot.send(ctx["chat_id"], text, keyboard)
+        return
     if ctx.get("is_super_owner"):
         if repo.count_tenants() == 0:
             # Bootstrap: no business exists yet, so walk the owner straight

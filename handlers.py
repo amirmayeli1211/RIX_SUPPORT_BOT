@@ -92,6 +92,12 @@ def enrich(ctx: dict) -> dict:
         # or not they later hold a membership in some tenant.
         ctx["is_super_owner"] = True
         ctx["is_owner"] = True
+    account = repo.account_by_tg(tg)
+    if account:
+        # Paying customer: they get the account panel (shops they own) even
+        # before they own any shop, so the layer above shops is reachable.
+        ctx["is_account"] = True
+        ctx["account"] = account
     return ctx
 
 
@@ -140,6 +146,9 @@ def _route_cb(ctx) -> None:
         admin_handlers.on_operator_cb(ctx)
     elif prefix == cb.RATE:
         customer_handlers.on_rate_cb(ctx)
+    elif prefix == cb.ACC:
+        import account_handlers
+        account_handlers.on_account_cb(ctx)
     else:
         user_handlers.on_nav(ctx)  # unknown -> back to menu
 
@@ -186,6 +195,8 @@ def _route_msg(ctx) -> None:
             return
 
     # A live verification code from a user we just invited?
+    if verification.confirm_account(ctx["tg_id"], text):
+        return
     if verification.confirm(ctx["tg_id"], text):
         return
 
@@ -215,6 +226,7 @@ def _route_group(ctx) -> None:
 
 
 def _route_state(ctx, state: str) -> bool:
+    import account_handlers
     import admin_handlers
     import customer_handlers
     import owner_handlers
@@ -223,6 +235,8 @@ def _route_state(ctx, state: str) -> bool:
         St.ADD_CUSTOMER_ID: customer_handlers.on_state_add_customer_id,
         St.TAG_CUSTOMER: customer_handlers.on_state_tag,
         St.SEARCH_CUSTOMER: customer_handlers.on_state_search,
+        "new_shop": account_handlers.on_state_new_shop,
+        "sell_account": owner_handlers.on_state_sell_account,
         St.ADD_OPERATOR_ID: admin_handlers.on_state_add_operator,
         St.OP_CAPACITY: admin_handlers.on_state_capacity,
         St.SET_VALUE: admin_handlers.on_state_set_value,

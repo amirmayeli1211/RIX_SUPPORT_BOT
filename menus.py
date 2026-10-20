@@ -119,6 +119,63 @@ def screen_tenants(tenants) -> tuple[str, dict | None]:
     return f"<b>کسب‌وکارها</b>\n\n{body}", kb.tenant_list(tenants)
 
 
+def screen_account_menu(account) -> tuple[str, dict | None]:
+    """Customer panel home: shops owned + plan info."""
+    import keyboards as kb2
+    import repositories as repo2
+    aid = account["id"]
+    shops = repo2.account_shops(aid)
+    used = len(shops)
+    cap = account.get("max_shops") or 1
+    plan_name = account.get("plan_name") or "-"
+    lines = [
+        f"<b>پنل مشتری</b> {esc(account.get('name') or account['tg_id'])}",
+        f"پلن: <b>{esc(plan_name)}</b> — {used}/{cap} فروشگاه",
+    ]
+    if shops:
+        lines.append("")
+        lines.append("<b>فروشگاه‌های شما:</b>")
+        for sh in shops:
+            flag = "فعال" if sh["status"] == "active" else "غیرفعال"
+            lines.append(f"- {esc(sh['name'])} ({flag})")
+    else:
+        lines.append("")
+        lines.append("هنوز فروشگاهی ندارید. اولین فروشگاه خود را بسازید.")
+    if used >= cap:
+        lines.append("")
+        lines.append("<i>به سقف پلن رسیدید؛ برای ارتقا با مالک تماس بگیرید.</i>")
+    return "\n".join(lines), kb2.account_menu(account)
+
+
+def screen_shop_entered(shop) -> tuple[str, dict | None]:
+    """After a customer opens one of their shops: the shop's own menu."""
+    import keyboards as kb2
+    lines = [
+        f"<b>فروشگاه: {esc(shop['name'])}</b>",
+        "از اینجا همه‌چیز همین فروشگاه است: اپراتورها، مشتریان، لینک‌ها و تیکت‌ها.",
+    ]
+    keyboard = kb2.markup(
+        [kb2.btn("تیکت‌های باز تیم", cb.enc(cb.NAV, "team_open"), style="primary"),
+         kb2.btn("گزارش", cb.enc(cb.AD, "report"))],
+        [kb2.btn("تنظیمات", cb.enc(cb.AD, "settings")),
+         kb2.btn("اپراتورها", cb.enc(cb.AD, "operators"))],
+        [kb2.btn("مشتریان", cb.enc(cb.AD, "customers")),
+         kb2.btn("لینک دعوت", cb.enc(cb.AD, "invite"), style="success")],
+        [kb2.btn("فروشگاه‌های من", cb.enc(cb.ACC, "shops"), style="primary")],
+    )
+    return "\n".join(lines), keyboard
+
+
+def screen_plan(account) -> tuple[str, dict | None]:
+    import keyboards as kb2
+    text = (
+        f"<b>پلن فعلی:</b> {esc(account.get('plan_name') or '-')}\n"
+        f"سقف فروشگاه: {account.get('max_shops') or 1}\n\n"
+        "برای ارتقا یا تغییر پلن با مالک پلتفرم در تماس باشید."
+    )
+    return text, kb2.plan_display(account)
+
+
 def screen_help() -> tuple[str, dict | None]:
     text = (
         "<b>راهنما</b>\n\n"

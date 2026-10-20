@@ -66,6 +66,8 @@ def main_menu(*, is_customer: bool, is_staff: bool, is_admin: bool,
         rows.append([btn("مشتریان", cb.enc(cb.AD, "customers")),
                      btn("لینک دعوت مشتریان", cb.enc(cb.AD, "invite"), style="primary")])
     if is_owner or is_super_owner:
+        rows.append([btn("مشتریان من", cb.enc(cb.OW, "accounts"), style="success"),
+                     btn("فروش پلن", cb.enc(cb.OW, "sell"), style="primary")])
         rows.append([btn("کسب‌وکارها", cb.enc(cb.OW, "list")),
                      btn("گزارش سراسری", cb.enc(cb.OW, "report"))])
         rows.append([btn("لاگ اقدامات", cb.enc(cb.AD, "audit"))])
@@ -255,6 +257,43 @@ def tenant_detail(tenant) -> dict | None:
     return markup(
         [status_btn],
         [btn("بازگشت", cb.enc(cb.OW, "list"))],
+    )
+
+
+# ------------------------------------------- customer panel (account)
+
+def account_menu(account) -> dict | None:
+    """The panel a paying customer lands on: their shops + how to grow."""
+    rows = [[btn("فروشگاه‌های من", cb.enc(cb.ACC, "shops"), style="primary"),
+             btn("ساخت فروشگاه", cb.enc(cb.ACC, "new"), style="success")]]
+    rows.append([btn("پلن من", cb.enc(cb.ACC, "plan")),
+                 btn("راهنما", cb.enc(cb.NAV, "help"))])
+    return markup(*rows)
+
+
+def shop_list(shops, account_id: int) -> dict | None:
+    rows = []
+    for sh in shops:
+        rows.append([btn(f"{sh['name']}", cb.enc(cb.ACC, "enter", sh["id"]),
+                         style="primary")])
+    rows.append([btn("ساخت فروشگاه", cb.enc(cb.ACC, "new"), style="success")])
+    rows.append([btn("بازگشت", cb.enc(cb.NAV, cb.MENU))])
+    return markup(*rows)
+
+
+def plan_picker(plans) -> dict | None:
+    """Owner picks a plan when selling to a new customer."""
+    rows = [[btn(f"{pl['name']} — تا {pl['max_shops']} فروشگاه",
+                 cb.enc(cb.OW, "sellplan", pl["id"]), style="primary")]
+            for pl in plans]
+    rows.append([btn("انصراف", cb.enc(cb.NAV, cb.MENU), style="danger")])
+    return markup(*rows)
+
+
+def plan_display(account) -> dict | None:
+    return markup(
+        [btn("ارتقای پلن (با مالک)", cb.enc(cb.NAV, cb.MENU), style="primary")],
+        [btn("بازگشت", cb.enc(cb.NAV, cb.MENU))],
     )
 
 

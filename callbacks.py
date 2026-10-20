@@ -16,6 +16,7 @@ AD = "ad"        # admin:      ad:<op>:<arg>
 OW = "ow"        # owner:      ow:<op>:<arg>
 RATE = "rate"    # rating:     rate:<ticket_id>:<1-5>
 OP = "op"        # operator:   op:<op>:<tg_id>
+ACC = "acc"      # customer panel (account): acc:<op>[:arg]  – plan/shop mgmt
 
 # Common operations
 MENU = "menu"

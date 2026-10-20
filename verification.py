@@ -81,9 +81,10 @@ def confirm(tg_id: int, text: str) -> bool:
     code = validators.code(text)
     if code is None:
         return False
-    tenant_id = repo.consume_code(tg_id, code, "customer_verify")
-    if tenant_id is None:
+    row = repo.consume_code(tg_id, code, "customer_verify")
+    if row is None or row["tenant_id"] is None:
         return False
+    tenant_id = row["tenant_id"]
     tenant = repo.get_tenant(tenant_id)
     if tenant is None or tenant["status"] != "active":
         return False
@@ -95,6 +96,53 @@ def confirm(tg_id: int, text: str) -> bool:
     bot.send(tenant_id_chat_of(tg_id), f"تأیید شد. {esc(welcome)}",
              keyboards.main_menu(is_customer=True, is_staff=False, is_admin=False,
                                  is_owner=False, has_open_ticket=False))
+    return True
+
+
+def start_account(tg_id: int, plan_id: int) -> str:
+    """Owner is selling a plan: create a pending account and send its code."""
+    plan = repo.get_plan(plan_id)
+    if not plan or not plan["active"]:
+        raise VerifyError("پلن انتخاب‌شده معتبر نیست.")
+    existing = repo.account_by_tg(tg_id)
+    if existing:
+        raise VerifyError("این کاربر قبلاً مشتری فعال شماست.")
+    account_id = repo.create_account(tg_id, plan_id, name=str(tg_id))
+    code = repo.issue_code(None, tg_id, "account_verify", account_id=account_id)
+    try:
+        bot.send(
+            tg_id,
+            f"خرید پلن <b>{esc(plan['name'])}</b> ثبت شد ✅\n"
+            f"کد تأیید:\n<code>{esc(code)}</code>\n\n"
+            "آن را برای ربات بفرستید تا پنل مشتری شما فعال شود.",
+            keyboards.code_keyboard(code),
+        )
+    except bot.TgError as exc:
+        raise VerifyError(
+            "امکان ارسال پیام به این کاربر نیست؛ باید اول ربات را استارت کند."
+        ) from exc
+    audit.log(None, None, "account.sell", target=tg_id,
+              detail=f"plan={plan['name']}")
+    return (f"کد تأیید پلن <b>{esc(plan['name'])}</b> برای <code>{tg_id}</code> "
+            f"ارسال شد.")
+
+
+def confirm_account(tg_id: int, text: str) -> bool:
+    """Buyer sent their code -> account goes active, they get the panel."""
+    code = validators.code(text)
+    if code is None:
+        return False
+    row = repo.consume_code(tg_id, code, "account_verify")
+    if row is None or row["account_id"] is None:
+        return False
+    account = repo.get_account(row["account_id"])
+    if account is None or account["status"] == "disabled":
+        return False
+    repo.mark_account_verified(account["id"])
+    audit.log(None, tg_id, "account.verify", target=account["id"])
+    from menus import screen_account_menu
+    text, keyboard = screen_account_menu(account)
+    bot.send(tg_id, "پنل مشتری شما فعال شد ✅\n" + text, keyboard)
     return True
 
 

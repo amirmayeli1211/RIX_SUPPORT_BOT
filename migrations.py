@@ -127,6 +127,34 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         "ALTER TABLE tickets ADD COLUMN group_chat_id INTEGER",
         "ALTER TABLE tickets ADD COLUMN last_group_msg_id INTEGER",
     ]),
+    (6, [
+        # Platform layer above shops. An account = a customer Reza sells to.
+        # They own shops (tenants); how many is capped by their plan.
+        """CREATE TABLE IF NOT EXISTS plans (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL,
+            max_shops   INTEGER NOT NULL DEFAULT 1,
+            price       INTEGER NOT NULL DEFAULT 0,
+            active      INTEGER NOT NULL DEFAULT 1,
+            created_at  INTEGER NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS accounts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            tg_id       INTEGER NOT NULL,
+            name        TEXT,
+            plan_id     INTEGER REFERENCES plans(id),
+            status      TEXT    NOT NULL DEFAULT 'pending',
+            verified_at INTEGER,
+            created_at  INTEGER NOT NULL
+        )""",
+        "ALTER TABLE tenants ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
+        "ALTER TABLE verify_codes ADD COLUMN account_id INTEGER",
+        # Seed the three default plans Reza picks from when adding a customer.
+        "INSERT INTO plans(name, max_shops, price, created_at) VALUES"
+        " ('پایه', 1, 0, strftime('%s','now')),"
+        " ('حرفه‌ای', 3, 0, strftime('%s','now')),"
+        " ('سازمانی', 10, 0, strftime('%s','now'))",
+    ]),
 ]
 
 

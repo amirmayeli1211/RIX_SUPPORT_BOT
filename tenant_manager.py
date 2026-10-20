@@ -15,14 +15,17 @@ class TenantError(Exception):
     pass
 
 
-def create(name: str, creator_tg_id: int, slug: str | None = None) -> int:
+def create(name: str, creator_tg_id: int, slug: str | None = None,
+           account_id: int | None = None) -> int:
     if not name or not name.strip():
         raise TenantError("نام کسب‌وکار خالی است.")
-    tenant_id = repo.create_tenant(name.strip(), creator_tg_id, slug)
+    tenant_id = repo.create_tenant(name.strip(), creator_tg_id, slug,
+                                   account_id=account_id)
     repo.seed_settings(tenant_id)
     if creator_tg_id:
         repo.add_member(tenant_id, creator_tg_id, Role.OWNER)
-    audit.log(tenant_id, creator_tg_id, audit.Act.TENANT_CREATE, target=name)
+    audit.log(tenant_id, creator_tg_id, audit.Act.TENANT_CREATE, target=name,
+              detail=f"account={account_id}" if account_id else "")
     return tenant_id
 
 
