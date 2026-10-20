@@ -1,0 +1,3 @@
+# RIX_SUPPORT_BOT runs on the Python standard library only.
+# No third-party dependencies: urllib + sqlite3 + http.server.
+# Python 3.11+ required (match on unions, dataclass features).
